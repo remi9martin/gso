@@ -135,9 +135,7 @@ describe('checkDispatchAuthorization', () => {
   });
 
   it('accepts indented `authorized: true` (line-anchored, not column-anchored)', () => {
-    expect(() =>
-      checkDispatchAuthorization('GSO-1', { body: '  authorized: true' })
-    ).not.toThrow();
+    expect(() => checkDispatchAuthorization('GSO-1', { body: '  authorized: true' })).not.toThrow();
   });
 
   it('accepts `authorized: true` on a later line (multi-line YAML)', () => {
