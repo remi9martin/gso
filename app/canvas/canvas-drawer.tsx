@@ -147,7 +147,6 @@ function AgentDetailSlot({
       </section>
 
       <section className={styles.drawerSection} aria-label="Routing rationale">
-        <h4 className={styles.drawerSubhead}>Routing rationale</h4>
         <dl className={styles.drawerDl}>
           <dt>Capabilities</dt>
           <dd>
@@ -195,8 +194,11 @@ function AgentDetailSlot({
             </span>
             {node.workload.currentIssueRef ? (
               <p className={styles.drawerCurrent}>
-                Currently: <code>{node.workload.currentIssueRef.identifier}</code> —{' '}
-                {node.workload.currentIssueRef.title}
+                Currently:{' '}
+                <a href={`/GSO/issues/${node.workload.currentIssueRef.identifier}`}>
+                  <code>{node.workload.currentIssueRef.identifier}</code>
+                </a>{' '}
+                — {node.workload.currentIssueRef.title}
               </p>
             ) : null}
           </dd>

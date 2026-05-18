@@ -65,6 +65,21 @@ try {
     });
     console.log(`Wrote ${vp.name}-03-keyboard-walkthrough.png`);
 
+    // 4. Stub slot (routing-trace) — deep-link via ?slot=
+    await page.goto(`${base}/canvas?slot=routing-trace:GSO-36`, {
+      waitUntil: 'networkidle',
+      timeout: 30_000
+    });
+    await page.waitForSelector('aside[role="dialog"][data-slot-kind="routing-trace"]', {
+      timeout: 5_000
+    });
+    await page.waitForTimeout(150);
+    await page.screenshot({
+      path: path.join(outDir, `${vp.name}-04-stub-routing-trace.png`),
+      fullPage: false
+    });
+    console.log(`Wrote ${vp.name}-04-stub-routing-trace.png`);
+
     await context.close();
   }
 } finally {

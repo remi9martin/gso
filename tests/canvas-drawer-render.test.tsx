@@ -82,6 +82,25 @@ describe('OrgCanvasDrawer renders every slot kind without crashing', () => {
     expect(html).toBe('');
   });
 
+  it('agent-detail renders currentIssueRef as a /GSO/issues/{identifier} link and omits the Routing rationale parent heading', () => {
+    const linkedNode = node('agent-2');
+    linkedNode.workload.currentIssueRef = {
+      id: 'iss-1',
+      identifier: 'GSO-99',
+      title: 'Sample task'
+    };
+    const html = renderToStaticMarkup(
+      <OrgCanvasDrawer
+        slot={{ kind: 'agent-detail', agentId: 'agent-2' }}
+        nodesByAgentId={new Map([['agent-2', linkedNode]])}
+        onClose={() => {}}
+      />
+    );
+    expect(html).toContain('href="/GSO/issues/GSO-99"');
+    expect(html).toContain('<code>GSO-99</code>');
+    expect(html).not.toMatch(/<h\d[^>]*>Routing rationale<\/h\d>/);
+  });
+
   it('agent-detail with unknown agentId renders an empty-state message rather than crashing', () => {
     const html = renderToStaticMarkup(
       <OrgCanvasDrawer

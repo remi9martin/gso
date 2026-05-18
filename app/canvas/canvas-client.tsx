@@ -86,6 +86,23 @@ export function CanvasClient({
     return () => clearInterval(id);
   }, [pollIntervalMs, fetchCanvas]);
 
+  // Deep-link drawer state via ?slot=<kind>[:<ref>] (e.g. ?slot=routing-trace:GSO-36).
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const raw = params.get('slot');
+    if (!raw) return;
+    const [kind, ref] = raw.split(':');
+    if (kind === 'routing-trace') {
+      setSlot({ kind: 'routing-trace', issueId: ref ?? 'preview' });
+    } else if (kind === 'rules-explainer') {
+      setSlot({ kind: 'rules-explainer', ruleSetId: ref ?? 'preview' });
+    } else if (kind === 'agent-detail' && ref) {
+      triggeringAgentIdRef.current = ref;
+      setSlot({ kind: 'agent-detail', agentId: ref });
+    }
+  }, []);
+
   // Keep focusedAgentId valid as the bundle updates.
   useEffect(() => {
     if (state.layout.nodes.length === 0) {
@@ -215,6 +232,14 @@ export function CanvasClient({
             onCardKeyDown={handleCardKeyDown}
           />
         </div>
+        {slot ? (
+          <button
+            type="button"
+            className={styles.scrim}
+            aria-label="Close drawer"
+            onClick={handleCloseDrawer}
+          />
+        ) : null}
         <OrgCanvasDrawer slot={slot} nodesByAgentId={nodesByAgentId} onClose={handleCloseDrawer} />
       </div>
       <footer className={styles.legend}>
