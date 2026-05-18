@@ -55,7 +55,7 @@ npm run format:write # prettier --write .
 }
 ```
 
-`commit` is populated by `GIT_COMMIT_SHA` (CI sets it from `github.sha`; Vercel sets `VERCEL_GIT_COMMIT_SHA` automatically). Local dev shows `dev`.
+`commit` precedence: `GSO_COMMIT` → `VERCEL_GIT_COMMIT_SHA` (set automatically by Vercel) → `GIT_COMMIT_SHA` (set by CI from `github.sha`) → `dev` (local). SHA is truncated to 7 chars.
 
 ## CI
 
