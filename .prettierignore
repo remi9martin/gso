@@ -3,3 +3,8 @@ node_modules
 dist
 coverage
 package-lock.json
+
+# Runbooks are synced verbatim from Paperclip issue documents.
+# The issue document is the canonical source — do not let prettier
+# rewrite the body during sync.
+docs/runbooks/
