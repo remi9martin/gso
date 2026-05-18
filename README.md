@@ -62,13 +62,20 @@ npm run format:write # prettier --write .
 `.github/workflows/ci.yml` runs on push and PR to `main`:
 
 1. `npm ci`
-2. `npm run lint`
-3. `npm run typecheck`
-4. `npm test`
-5. `npm run format` (Prettier check)
-6. `npm run build`
+2. `npm audit --audit-level=high` — fails the build on high or critical advisories
+3. `npm run lint`
+4. `npm run typecheck`
+5. `npm test`
+6. `npm run format` (Prettier check)
+7. `npm run build`
 
 A passing badge will be added once the GitHub remote and the `main` branch exist.
+
+### Dependency security
+
+- **`npm audit`** runs in CI after `npm ci`. Builds fail on `high` or `critical` advisories. Triage lower-severity findings locally with `npm audit` (no level flag).
+- **Dependabot** (`.github/dependabot.yml`) opens weekly PRs for `npm` and `github-actions` updates and emits security PRs out-of-band when GitHub publishes a matching advisory.
+- **CodeQL** (`.github/workflows/codeql.yml`) runs static analysis on every push and PR plus a weekly Monday scan, with the `security-extended` query pack.
 
 ## Deploy path
 
