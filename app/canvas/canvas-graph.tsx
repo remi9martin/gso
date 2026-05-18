@@ -2,6 +2,7 @@
 
 import type { CanvasLayout, CanvasLayoutNode } from '@/lib/canvas/layout';
 import type { AgentStatusFlag, CanvasNode } from '@/lib/canvas/types';
+import { burnStateFor, type BurnState } from '@/styles/tokens';
 
 import styles from './canvas.module.css';
 
@@ -122,8 +123,7 @@ function BudgetRow({ node }: { node: CanvasNode }) {
     return <div className={styles.budgetRow}>budget: not set</div>;
   }
   const pct = b.monthUtilizationPct ?? 0;
-  const tone =
-    pct >= b.pauseThresholdPct ? 'critical' : pct >= b.attentionThresholdPct ? 'warn' : 'ok';
+  const state = burnStateFor(pct);
   const widthPct = Math.min(Math.max(pct * 100, 0), 100);
   return (
     <div className={styles.budgetRow}>
@@ -131,18 +131,33 @@ function BudgetRow({ node }: { node: CanvasNode }) {
         <span>{formatUSD(b.monthSpentCents ?? 0)}</span>
         <span className={styles.budgetSlash}> / </span>
         <span>{formatUSD(b.monthBudgetCents)}</span>
-        <span className={`${styles.budgetPct} ${styles[`pct_${tone}`]}`}>
+        <span className={`${styles.budgetPct} ${styles[`pct_${pctToneFor(state)}`]}`}>
           {(pct * 100).toFixed(0)}%
         </span>
       </div>
-      <div className={styles.budgetTrack}>
-        <div
-          className={`${styles.budgetFill} ${styles[`fill_${tone}`]}`}
-          style={{ width: `${widthPct}%` }}
-        />
+      <div
+        className={styles.budgetTrack}
+        role="meter"
+        aria-label="Budget burn"
+        aria-valuenow={pct}
+        aria-valuemin={0}
+        aria-valuemax={1}
+        aria-valuetext={`${(pct * 100).toFixed(0)}% — ${state}`}
+      >
+        <div className={styles.budgetFill} data-state={state} style={{ width: `${widthPct}%` }} />
       </div>
     </div>
   );
+}
+
+// Burn states surface 4 hues on the bar (pre-attentive hue jump
+// warning → alert → critical) but the % label uses 3 text tones — `alert`
+// folds into the amber text family until the critical band. Bar colour
+// remains the primary signal; text echoes it without inventing a 4th token.
+function pctToneFor(state: BurnState): 'ok' | 'warn' | 'critical' {
+  if (state === 'critical') return 'critical';
+  if (state === 'healthy') return 'ok';
+  return 'warn';
 }
 
 function pickStatusTone(node: CanvasNode): 'running' | 'idle' | 'paused' | 'error' | 'unknown' {

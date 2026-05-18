@@ -1,0 +1,44 @@
+/*
+ * B4 palette — burn ramp (load encoding) — canonical per GSO-46.
+ *
+ * Tokens, pulse hook, and breakpoint CSS vars consumed by A3's burn-bar
+ * component. Do not add inline hex or inline ratios anywhere downstream —
+ * import { burnStateFor, BURN_BREAKPOINTS } from '@/styles/tokens' instead.
+ */
+
+:root {
+  /* — Burn ramp (load encoding, canonical per GSO-46) — */
+  --burn-fill-healthy: #22c55e;
+  --burn-fill-warning: #f59e0b;
+  --burn-fill-alert: #f97316;
+  --burn-fill-critical: #ef4444;
+  --burn-track: #2a3148;
+
+  /* — Burn pulse (critical-state animation hook) — */
+  --burn-pulse-keyframes: burn-pulse-critical;
+  --burn-pulse-duration: 1400ms;
+  --burn-pulse-easing: cubic-bezier(0.4, 0, 0.6, 1);
+  --burn-pulse-animation: var(--burn-pulse-keyframes) var(--burn-pulse-duration)
+    var(--burn-pulse-easing) infinite;
+
+  /* — Burn breakpoints (mirror BURN_BREAKPOINTS in tokens.ts) — */
+  --burn-breakpoint-warning: 0.6;
+  --burn-breakpoint-alert: 0.8;
+  --burn-breakpoint-critical: 0.95;
+}
+
+@keyframes burn-pulse-critical {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --burn-pulse-animation: none;
+  }
+}

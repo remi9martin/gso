@@ -278,10 +278,13 @@
   color: #8a1f1c;
 }
 
+/* Burn-bar — A3 surface, consumes B4 burn tokens from @/styles/tokens.css.
+ * Track + fill colors and the critical pulse animation are token-driven; the
+ * 4-state data-state attribute is set from burnStateFor(ratio) in tokens.ts. */
 .budgetTrack {
   width: 100%;
   height: 4px;
-  background: #eee;
+  background: var(--burn-track);
   border-radius: 2px;
   overflow: hidden;
 }
@@ -292,16 +295,21 @@
   transition: width 240ms ease;
 }
 
-.fill_ok {
-  background: #4caf50;
+.budgetFill[data-state='healthy'] {
+  background: var(--burn-fill-healthy);
 }
 
-.fill_warn {
-  background: #ff9800;
+.budgetFill[data-state='warning'] {
+  background: var(--burn-fill-warning);
 }
 
-.fill_critical {
-  background: #e53935;
+.budgetFill[data-state='alert'] {
+  background: var(--burn-fill-alert);
+}
+
+.budgetFill[data-state='critical'] {
+  background: var(--burn-fill-critical);
+  animation: var(--burn-pulse-animation);
 }
 
 .emptyState {
