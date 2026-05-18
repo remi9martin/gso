@@ -55,7 +55,6 @@ async function main(): Promise<void> {
   };
   await store.insert(record);
 
-   
   console.log(
     JSON.stringify(
       {
@@ -70,7 +69,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
-   
   console.error(err);
   process.exit(1);
 });

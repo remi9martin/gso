@@ -270,10 +270,8 @@ function consoleLogger(): { info: (msg: string, meta: Record<string, unknown>) =
   return {
     info(msg, meta) {
       try {
-         
         console.log(msg, JSON.stringify(meta));
       } catch {
-         
         console.log(msg);
       }
     }
