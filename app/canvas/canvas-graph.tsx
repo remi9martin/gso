@@ -1,5 +1,7 @@
 'use client';
 
+import { forwardRef, type KeyboardEvent, type MouseEvent } from 'react';
+
 import type { CanvasLayout, CanvasLayoutNode } from '@/lib/canvas/layout';
 import type { AgentStatusFlag, CanvasNode } from '@/lib/canvas/types';
 
@@ -8,7 +10,23 @@ import styles from './canvas.module.css';
 const NODE_WIDTH = 240;
 const NODE_HEIGHT = 168;
 
-export function CanvasGraph({ layout }: { layout: CanvasLayout }) {
+export interface CanvasGraphProps {
+  layout: CanvasLayout;
+  focusedAgentId: string | null;
+  selectedAgentId: string | null;
+  onSelectAgent: (agentId: string) => void;
+  onFocusAgent: (agentId: string) => void;
+  onCardKeyDown: (event: KeyboardEvent<HTMLDivElement>, agentId: string) => void;
+}
+
+export function CanvasGraph({
+  layout,
+  focusedAgentId,
+  selectedAgentId,
+  onSelectAgent,
+  onFocusAgent,
+  onCardKeyDown
+}: CanvasGraphProps) {
   if (layout.nodes.length === 0) {
     return (
       <div className={styles.emptyState}>
@@ -50,23 +68,66 @@ export function CanvasGraph({ layout }: { layout: CanvasLayout }) {
           })}
         </g>
         <g>
-          {layout.nodes.map((laidOut) => (
-            <AgentNode key={laidOut.node.org.agentId} laidOut={laidOut} />
-          ))}
+          {layout.nodes.map((laidOut) => {
+            const agentId = laidOut.node.org.agentId;
+            return (
+              <AgentNode
+                key={agentId}
+                laidOut={laidOut}
+                isFocused={focusedAgentId === agentId}
+                isSelected={selectedAgentId === agentId}
+                onSelect={onSelectAgent}
+                onFocus={onFocusAgent}
+                onCardKeyDown={onCardKeyDown}
+              />
+            );
+          })}
         </g>
       </svg>
     </div>
   );
 }
 
-function AgentNode({ laidOut }: { laidOut: CanvasLayoutNode }) {
+interface AgentNodeProps {
+  laidOut: CanvasLayoutNode;
+  isFocused: boolean;
+  isSelected: boolean;
+  onSelect: (agentId: string) => void;
+  onFocus: (agentId: string) => void;
+  onCardKeyDown: (event: KeyboardEvent<HTMLDivElement>, agentId: string) => void;
+}
+
+const AgentNode = forwardRef<HTMLDivElement, AgentNodeProps>(function AgentNode(
+  { laidOut, isFocused, isSelected, onSelect, onFocus, onCardKeyDown },
+  ref
+) {
   const { node, x, y } = laidOut;
   const statusTone = pickStatusTone(node);
+  const agentId = node.org.agentId;
+
+  const handleClick = (event: MouseEvent<HTMLDivElement>) => {
+    event.stopPropagation();
+    onSelect(agentId);
+  };
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    onCardKeyDown(event, agentId);
+  };
+
   return (
     <foreignObject x={x} y={y} width={NODE_WIDTH} height={NODE_HEIGHT}>
       <div
-        className={`${styles.card} ${styles[`card_${statusTone}`]}`}
+        ref={ref}
+        className={`${styles.card} ${styles[`card_${statusTone}`]} ${isSelected ? styles.card_selected : ''}`}
         data-testid={`agent-card-${node.org.urlKey}`}
+        data-agent-id={agentId}
+        role="button"
+        tabIndex={isFocused ? 0 : -1}
+        aria-pressed={isSelected}
+        aria-label={`${node.org.displayName} — ${node.org.roleKey}`}
+        onClick={handleClick}
+        onKeyDown={handleKeyDown}
+        onFocus={() => onFocus(agentId)}
       >
         <div className={styles.cardHeader}>
           <span className={styles.cardName}>{node.org.displayName}</span>
@@ -78,7 +139,7 @@ function AgentNode({ laidOut }: { laidOut: CanvasLayoutNode }) {
       </div>
     </foreignObject>
   );
-}
+});
 
 function FlagRow({ flags }: { flags: AgentStatusFlag[] }) {
   if (!flags.length) {

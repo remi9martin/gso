@@ -1,11 +1,17 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 
 import { layoutCanvas, type CanvasLayout } from '@/lib/canvas/layout';
-import type { CanvasBundle } from '@/lib/canvas/types';
+import {
+  arrowKeyToTreeDirection,
+  resolveTreeNavigation,
+  type OrgDrawerSlot
+} from '@/lib/canvas/drawer';
+import type { CanvasBundle, CanvasNode } from '@/lib/canvas/types';
 
 import { CanvasGraph } from './canvas-graph';
+import { OrgCanvasDrawer } from './canvas-drawer';
 import styles from './canvas.module.css';
 
 interface CanvasClientProps {
@@ -38,6 +44,13 @@ export function CanvasClient({
     error: null,
     isFetching: false
   }));
+
+  const [slot, setSlot] = useState<OrgDrawerSlot | null>(null);
+  const [focusedAgentId, setFocusedAgentId] = useState<string | null>(
+    initialLayout.nodes[0]?.node.org.agentId ?? null
+  );
+  const triggeringAgentIdRef = useRef<string | null>(null);
+  const graphContainerRef = useRef<HTMLDivElement | null>(null);
 
   const fetchCanvas = useCallback(async () => {
     setState((prev) => ({ ...prev, isFetching: true, error: null }));
@@ -73,7 +86,89 @@ export function CanvasClient({
     return () => clearInterval(id);
   }, [pollIntervalMs, fetchCanvas]);
 
+  // Keep focusedAgentId valid as the bundle updates.
+  useEffect(() => {
+    if (state.layout.nodes.length === 0) {
+      setFocusedAgentId(null);
+      return;
+    }
+    setFocusedAgentId((prev) => {
+      if (prev && state.layout.nodes.some((n) => n.node.org.agentId === prev)) return prev;
+      return state.layout.nodes[0].node.org.agentId;
+    });
+  }, [state.layout]);
+
+  const nodesByAgentId = useMemo(() => {
+    const m = new Map<string, CanvasNode>();
+    for (const n of state.bundle.nodes) m.set(n.org.agentId, n);
+    return m;
+  }, [state.bundle]);
+
   const summary = useMemo(() => buildSummary(state.bundle), [state.bundle]);
+
+  const focusCardElement = useCallback((agentId: string) => {
+    const container = graphContainerRef.current;
+    if (!container) return;
+    const el = container.querySelector<HTMLDivElement>(`[data-agent-id="${cssEscape(agentId)}"]`);
+    el?.focus();
+  }, []);
+
+  const handleSelect = useCallback((agentId: string) => {
+    triggeringAgentIdRef.current = agentId;
+    setFocusedAgentId(agentId);
+    setSlot({ kind: 'agent-detail', agentId });
+  }, []);
+
+  const handleFocusAgent = useCallback((agentId: string) => {
+    setFocusedAgentId(agentId);
+  }, []);
+
+  const handleCloseDrawer = useCallback(() => {
+    const returnTo = triggeringAgentIdRef.current;
+    setSlot(null);
+    if (returnTo) {
+      // Defer focus so the drawer fully unmounts first.
+      window.requestAnimationFrame(() => focusCardElement(returnTo));
+    }
+  }, [focusCardElement]);
+
+  const handleCardKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLDivElement>, agentId: string) => {
+      const dir = arrowKeyToTreeDirection(event.key);
+      if (dir) {
+        event.preventDefault();
+        const result = resolveTreeNavigation(state.layout, agentId, dir);
+        if (result.moved) {
+          setFocusedAgentId(result.agentId);
+          focusCardElement(result.agentId);
+        }
+        return;
+      }
+      if (event.key === 'Enter' || event.key === ' ' || event.key === 'Spacebar') {
+        event.preventDefault();
+        handleSelect(agentId);
+        return;
+      }
+      if (event.key === 'Escape' && slot) {
+        event.preventDefault();
+        handleCloseDrawer();
+      }
+    },
+    [state.layout, focusCardElement, handleSelect, handleCloseDrawer, slot]
+  );
+
+  // Global Esc handler when focus is inside the drawer.
+  useEffect(() => {
+    if (!slot) return undefined;
+    const handler = (e: globalThis.KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        handleCloseDrawer();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [slot, handleCloseDrawer]);
 
   return (
     <main className={styles.page}>
@@ -106,7 +201,22 @@ export function CanvasClient({
         </div>
       </header>
       {state.error ? <div className={styles.errorBanner}>{state.error}</div> : null}
-      <CanvasGraph layout={state.layout} />
+      <div
+        className={`${styles.canvasShell} ${slot ? styles.canvasShell_drawerOpen : ''}`}
+        ref={graphContainerRef}
+      >
+        <div className={styles.canvasMain}>
+          <CanvasGraph
+            layout={state.layout}
+            focusedAgentId={focusedAgentId}
+            selectedAgentId={slot?.kind === 'agent-detail' ? slot.agentId : null}
+            onSelectAgent={handleSelect}
+            onFocusAgent={handleFocusAgent}
+            onCardKeyDown={handleCardKeyDown}
+          />
+        </div>
+        <OrgCanvasDrawer slot={slot} nodesByAgentId={nodesByAgentId} onClose={handleCloseDrawer} />
+      </div>
       <footer className={styles.legend}>
         <LegendDot tone="running" label="running" />
         <LegendDot tone="idle" label="idle" />
@@ -150,4 +260,11 @@ function LegendDot({ tone, label }: { tone: string; label: string }) {
       {label}
     </span>
   );
+}
+
+function cssEscape(value: string): string {
+  if (typeof window !== 'undefined' && typeof window.CSS?.escape === 'function') {
+    return window.CSS.escape(value);
+  }
+  return value.replace(/["\\]/g, '\\$&');
 }
