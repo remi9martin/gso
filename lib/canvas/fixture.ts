@@ -2,96 +2,102 @@ import type { PaperclipAgent, PaperclipIssue } from '../paperclip/types';
 import { buildCanvasBundle } from './projection';
 import type { CanvasBundle } from './types';
 
-const T0 = Date.parse('2026-05-17T21:40:00.000Z');
-
-function ts(offsetMs: number): string {
-  return new Date(T0 + offsetMs).toISOString();
+// T0 anchors to wall-clock at bundle-build time (not module-parse time) so the
+// running-stripe / "1 running" pill stay green even after the dev server has
+// been up for a while. The projection idle-threshold check is relative to wall
+// clock, so stale fixture timestamps used to flip every agent to idle.
+function makeTs(t0: number) {
+  return (offsetMs: number): string => new Date(t0 + offsetMs).toISOString();
 }
 
-const FIXTURE_AGENTS: PaperclipAgent[] = [
-  {
-    id: 'agent-ceo',
-    companyId: 'demo-company',
-    name: 'Demo CEO',
-    role: 'ceo',
-    title: 'Chief Executive (demo)',
-    icon: null,
-    status: 'running',
-    reportsTo: null,
-    capabilities: null,
-    adapterType: 'claude_local',
-    runtimeConfig: { heartbeat: { enabled: true, maxConcurrentRuns: 1 } },
-    budgetMonthlyCents: 50000,
-    spentMonthlyCents: 31000,
-    pauseReason: null,
-    pausedAt: null,
-    permissions: { canCreateAgents: true },
-    lastHeartbeatAt: ts(-60_000),
-    urlKey: 'ceo'
-  },
-  {
-    id: 'agent-cto',
-    companyId: 'demo-company',
-    name: 'Demo CTO',
-    role: 'cto',
-    title: 'Chief Technology Officer (demo)',
-    icon: null,
-    status: 'running',
-    reportsTo: 'agent-ceo',
-    capabilities: null,
-    adapterType: 'claude_local',
-    runtimeConfig: { heartbeat: { enabled: true, maxConcurrentRuns: 1 } },
-    budgetMonthlyCents: 20000,
-    spentMonthlyCents: 17800,
-    pauseReason: null,
-    pausedAt: null,
-    permissions: { canCreateAgents: true },
-    lastHeartbeatAt: ts(-30_000),
-    urlKey: 'cto'
-  },
-  {
-    id: 'agent-eng',
-    companyId: 'demo-company',
-    name: 'Demo Engineer',
-    role: 'engineer',
-    title: 'Founding Engineer (demo)',
-    icon: null,
-    status: 'running',
-    reportsTo: 'agent-cto',
-    capabilities: null,
-    adapterType: 'claude_local',
-    runtimeConfig: { heartbeat: { enabled: true, maxConcurrentRuns: 2 } },
-    budgetMonthlyCents: 30000,
-    spentMonthlyCents: 9500,
-    pauseReason: null,
-    pausedAt: null,
-    permissions: { canCreateAgents: false },
-    lastHeartbeatAt: ts(-15_000),
-    urlKey: 'engineer'
-  },
-  {
-    id: 'agent-ux',
-    companyId: 'demo-company',
-    name: 'Demo UX',
-    role: 'uxdesigner',
-    title: 'UX Designer (demo)',
-    icon: null,
-    status: 'idle',
-    reportsTo: 'agent-cto',
-    capabilities: null,
-    adapterType: 'claude_local',
-    runtimeConfig: { heartbeat: { enabled: true, maxConcurrentRuns: 1 } },
-    budgetMonthlyCents: 10000,
-    spentMonthlyCents: 0,
-    pauseReason: null,
-    pausedAt: null,
-    permissions: { canCreateAgents: false },
-    lastHeartbeatAt: ts(-5 * 60_000),
-    urlKey: 'uxdesigner'
-  }
-];
+function fixtureAgents(t0: number): PaperclipAgent[] {
+  const ts = makeTs(t0);
+  return [
+    {
+      id: 'agent-ceo',
+      companyId: 'demo-company',
+      name: 'Demo CEO',
+      role: 'ceo',
+      title: 'Chief Executive (demo)',
+      icon: null,
+      status: 'running',
+      reportsTo: null,
+      capabilities: null,
+      adapterType: 'claude_local',
+      runtimeConfig: { heartbeat: { enabled: true, maxConcurrentRuns: 1 } },
+      budgetMonthlyCents: 50000,
+      spentMonthlyCents: 31000,
+      pauseReason: null,
+      pausedAt: null,
+      permissions: { canCreateAgents: true },
+      lastHeartbeatAt: ts(-60_000),
+      urlKey: 'ceo'
+    },
+    {
+      id: 'agent-cto',
+      companyId: 'demo-company',
+      name: 'Demo CTO',
+      role: 'cto',
+      title: 'Chief Technology Officer (demo)',
+      icon: null,
+      status: 'running',
+      reportsTo: 'agent-ceo',
+      capabilities: null,
+      adapterType: 'claude_local',
+      runtimeConfig: { heartbeat: { enabled: true, maxConcurrentRuns: 1 } },
+      budgetMonthlyCents: 20000,
+      spentMonthlyCents: 17800,
+      pauseReason: null,
+      pausedAt: null,
+      permissions: { canCreateAgents: true },
+      lastHeartbeatAt: ts(-30_000),
+      urlKey: 'cto'
+    },
+    {
+      id: 'agent-eng',
+      companyId: 'demo-company',
+      name: 'Demo Engineer',
+      role: 'engineer',
+      title: 'Founding Engineer (demo)',
+      icon: null,
+      status: 'running',
+      reportsTo: 'agent-cto',
+      capabilities: null,
+      adapterType: 'claude_local',
+      runtimeConfig: { heartbeat: { enabled: true, maxConcurrentRuns: 2 } },
+      budgetMonthlyCents: 30000,
+      spentMonthlyCents: 9500,
+      pauseReason: null,
+      pausedAt: null,
+      permissions: { canCreateAgents: false },
+      lastHeartbeatAt: ts(-15_000),
+      urlKey: 'engineer'
+    },
+    {
+      id: 'agent-ux',
+      companyId: 'demo-company',
+      name: 'Demo UX',
+      role: 'uxdesigner',
+      title: 'UX Designer (demo)',
+      icon: null,
+      status: 'idle',
+      reportsTo: 'agent-cto',
+      capabilities: null,
+      adapterType: 'claude_local',
+      runtimeConfig: { heartbeat: { enabled: true, maxConcurrentRuns: 1 } },
+      budgetMonthlyCents: 10000,
+      spentMonthlyCents: 0,
+      pauseReason: null,
+      pausedAt: null,
+      permissions: { canCreateAgents: false },
+      lastHeartbeatAt: ts(-5 * 60_000),
+      urlKey: 'uxdesigner'
+    }
+  ];
+}
 
-function fixtureIssues(): PaperclipIssue[] {
+function fixtureIssues(t0: number): PaperclipIssue[] {
+  const ts = makeTs(t0);
   const issues: PaperclipIssue[] = [];
   let n = 1;
   const push = (overrides: Partial<PaperclipIssue> & Pick<PaperclipIssue, 'assigneeAgentId'>) => {
@@ -194,10 +200,11 @@ function fixtureIssues(): PaperclipIssue[] {
 }
 
 export function fixtureBundle(now: () => number = Date.now): CanvasBundle {
+  const t0 = now();
   return buildCanvasBundle({
     companyId: 'demo-company',
-    agents: FIXTURE_AGENTS,
-    issues: fixtureIssues(),
-    options: { now }
+    agents: fixtureAgents(t0),
+    issues: fixtureIssues(t0),
+    options: { now: () => t0 }
   });
 }

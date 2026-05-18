@@ -228,6 +228,14 @@
   color: #8a4b00;
 }
 
+/* Tertiary stat — Open issues is supporting context, not a headline.
+   Keep Agents/Running/Overloaded as the visual trio. */
+.summaryValueMuted {
+  font-size: 1.05rem;
+  font-weight: 500;
+  color: #6b6b6b;
+}
+
 .summaryLabel {
   font-size: 0.72rem;
   color: #6b6b6b;
@@ -291,6 +299,11 @@
   overflow: auto;
   padding: 0.5rem;
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.02);
+  /* Hug the laid-out tree so low-density orgs don't read as "broken layout"
+     with ~500px of dead canvas to the right. Centred so growth is symmetric. */
+  width: fit-content;
+  max-width: 100%;
+  margin-inline: auto;
 }
 
 .graphSvg {

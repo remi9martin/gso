@@ -175,7 +175,7 @@ export function CanvasClient({
                 value={summary.overloadedAgents}
                 tone={summary.overloadedAgents > 0 ? 'warn' : undefined}
               />
-              <SummaryStat label="Open issues" value={summary.openIssues} />
+              <SummaryStat label="Open issues" value={summary.openIssues} tone="muted" />
             </dl>
           </section>
 
@@ -263,12 +263,25 @@ function Chip({
   );
 }
 
-function SummaryStat({ label, value, tone }: { label: string; value: number; tone?: 'warn' }) {
+function SummaryStat({
+  label,
+  value,
+  tone
+}: {
+  label: string;
+  value: number;
+  tone?: 'warn' | 'muted';
+}) {
+  const valueClass = [
+    styles.summaryValue,
+    tone === 'warn' ? styles.summaryValueWarn : null,
+    tone === 'muted' ? styles.summaryValueMuted : null
+  ]
+    .filter(Boolean)
+    .join(' ');
   return (
     <div className={styles.summaryStat}>
-      <span className={`${styles.summaryValue} ${tone === 'warn' ? styles.summaryValueWarn : ''}`}>
-        {value}
-      </span>
+      <span className={valueClass}>{value}</span>
       <span className={styles.summaryLabel}>{label}</span>
     </div>
   );
