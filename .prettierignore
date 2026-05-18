@@ -3,3 +3,5 @@ node_modules
 dist
 coverage
 package-lock.json
+# Mirror of GSO-62 tokens document — keep byte-exact with the source doc.
+docs/design-system/tokens.md
