@@ -85,3 +85,25 @@ export function redactKey(text: string, key: OpaqueDispatcherKey): string {
   if (!value) return text;
   return text.split(value).join('[REDACTED]');
 }
+
+/**
+ * Redact every supplied secret from `text`. Accepts a mixed array of
+ * OpaqueDispatcherKey holders and raw string secrets (e.g. the origin-side
+ * Paperclip JWT held in `PaperclipEnv.apiKey`, which is a plain string and
+ * not wrapped in the opaque holder). Empty or nullish entries are skipped.
+ *
+ * Order matters only in pathological overlaps; we keep the call order as-is.
+ */
+export function redactKeys(
+  text: string,
+  keys: ReadonlyArray<OpaqueDispatcherKey | string | null | undefined>
+): string {
+  let out = text;
+  for (const k of keys) {
+    if (!k) continue;
+    const value = typeof k === 'string' ? k : k.reveal();
+    if (!value) continue;
+    out = out.split(value).join('[REDACTED]');
+  }
+  return out;
+}
