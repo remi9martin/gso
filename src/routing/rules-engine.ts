@@ -62,7 +62,6 @@ export const RULES: Rule[] = [
     patterns: [
       'ci pipeline',
       'github actions',
-      'dockerfile',
       'terraform',
       'k8s',
       'secrets vault',
@@ -181,6 +180,7 @@ export const RULES: Rule[] = [
       'pagination',
       'endpoint',
       'write code for',
+      'dockerfile',
       'build'
     ],
     destination: 'founding_engineer'
