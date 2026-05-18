@@ -18,7 +18,8 @@ interface FakeSql {
   rows: FakeRow[];
 }
 
-// In-memory fake of the @vercel/postgres `sql` tagged-template client.
+// In-memory fake of the @neondatabase/serverless tagged-template client
+// (configured with `fullResults: true`, which is the shape `SqlClient` types).
 // Inspects the first SQL chunk to decide INSERT vs SELECT, and applies
 // (agent_id, date_utc) primary-key dedup so we exercise the real
 // "ON CONFLICT DO NOTHING" semantics without needing a real database.

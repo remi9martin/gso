@@ -110,18 +110,18 @@ Both helpers are idempotent. Full runbook: [`docs/runbook-workspace.md`](docs/ru
 
 ### Burn-snapshot storage (production swap)
 
-Default storage for [budget burn snapshots](./lib/canvas/burn-snapshot/types.ts) is in-process memory, which loses data on every cold start. For production, swap to Postgres:
+Default storage for [budget burn snapshots](./lib/canvas/burn-snapshot/types.ts) is in-process memory, which loses data on every cold start. For production, swap to Postgres via Vercel's Neon integration (`@vercel/postgres` is deprecated; `@neondatabase/serverless` is the supported replacement):
 
-1. Provision a Vercel Postgres database (Neon under the hood) and let Vercel inject `POSTGRES_URL`/`POSTGRES_URL_NON_POOLING` into the project.
+1. Provision a Neon Postgres database via Vercel's Neon integration and let Vercel inject `DATABASE_URL` (pooled; used by the app via Neon's HTTP driver) and `DATABASE_URL_UNPOOLED` (direct connection; used by `psql` for the one-shot migration) into the project.
 2. Apply the migration once against the production database:
 
    ```bash
-   psql "$POSTGRES_URL_NON_POOLING" -f migrations/0001_budget_burn_snapshot.sql
+   psql "$DATABASE_URL_UNPOOLED" -f migrations/0001_budget_burn_snapshot.sql
    ```
 
    The migration is idempotent (`CREATE TABLE IF NOT EXISTS`), so re-running is safe.
 
-3. Set `BURN_SNAPSHOT_STORE=postgres` in the Vercel project's environment and redeploy.
+3. Set `BURN_SNAPSHOT_STORE=postgres` in the Vercel project's environment and redeploy. The adapter reads `DATABASE_URL` at first use, so no extra wiring is required.
 
 Rollback: set `BURN_SNAPSHOT_STORE=memory` (or unset) and redeploy. The Postgres table is left in place; no data is destroyed.
 
