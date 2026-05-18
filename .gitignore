@@ -40,3 +40,6 @@ pnpm-debug.log*
 
 # scratch
 .scratch
+
+# local screenshots (Playwright output from scripts/screenshot-canvas.mjs)
+screenshots/

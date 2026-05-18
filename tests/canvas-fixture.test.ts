@@ -36,4 +36,11 @@ describe('fixtureBundle', () => {
     expect(s.totalAgents).toBeGreaterThanOrEqual(3);
     expect(s.openIssues).toBeGreaterThan(0);
   });
+
+  it('anchors heartbeats to the supplied now() — running agents stay running across wall-clock jumps', () => {
+    const farFuture = Date.parse('2099-01-01T00:00:00.000Z');
+    const b = fixtureBundle(() => farFuture);
+    const running = b.nodes.filter((n) => n.org.runtimeStatus === 'running');
+    expect(running.length).toBeGreaterThan(0);
+  });
 });
