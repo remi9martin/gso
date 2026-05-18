@@ -18,7 +18,7 @@ Operating layer for solo AI founders, riding Paperclip primitives. The v0 produc
 | CI            | GitHub Actions — lint, typecheck, test, build  |
 | Deploy        | [Vercel](https://vercel.com/) (Next.js preset) |
 
-Why these: Next.js gives us SSR for the read-heavy Paperclip surfaces and one-click deploys to Vercel. Vitest is the lightest TS-native test runner that survives a frontend + node-runtime mix. Everything here is a two-way door — no DB, no auth framework, no Paperclip wrapper yet (those land in [GSO-21](../../issues/GSO-21) and [GSO-28](../../issues/GSO-28)).
+Why these: Next.js gives us SSR for the read-heavy Paperclip surfaces and one-click deploys to Vercel. Vitest is the lightest TS-native test runner that survives a frontend + node-runtime mix. Everything here is a two-way door — no DB, no auth framework, no Paperclip wrapper yet (those land in `GSO-21` and `GSO-28`, tracked in Paperclip).
 
 ## Requirements
 
