@@ -22,7 +22,7 @@ Why these: Next.js gives us SSR for the read-heavy Paperclip surfaces and one-cl
 
 ## Requirements
 
-- Node `>= 20`
+- Node `>= 22`
 - npm `>= 10`
 
 ## Run commands
