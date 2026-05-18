@@ -40,3 +40,6 @@ pnpm-debug.log*
 
 # scratch
 .scratch
+
+# per-issue heartbeat worktrees (see docs/runbook-workspace.md)
+.worktrees

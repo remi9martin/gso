@@ -81,6 +81,26 @@ The repo is Vercel-ready out of the box.
 
 Rollback: redeploy a previous deployment from the Vercel dashboard, or `git revert` and push.
 
+## Heartbeat workspace isolation
+
+GSO agents run on Paperclip heartbeats, and the platform's "exclusive checkout" lock is per-issue, not per-workspace. Multiple heartbeats on different issues can land in the same agent's workspace and clobber each other (see [GSO-53](../../issues/GSO-53) for the near-miss on A5).
+
+**Rule:** never edit tracked files from the workspace root. Every heartbeat operates inside `.worktrees/<issue-id>/`.
+
+The first command of any heartbeat:
+
+```powershell
+# PowerShell (production agent runtime)
+$wt = & ./scripts/heartbeat-worktree.ps1 $env:PAPERCLIP_TASK_ID; Set-Location $wt
+```
+
+```bash
+# Bash (CI, local Unix)
+cd "$(./scripts/heartbeat-worktree.sh "$PAPERCLIP_TASK_ID")"
+```
+
+Both helpers are idempotent. Full runbook: [`docs/runbook-workspace.md`](docs/runbook-workspace.md).
+
 ## Pre-commit
 
 `npm install` runs `husky` which installs the `.husky/pre-commit` hook. The hook runs `lint-staged`, which Prettier-formats and ESLint-fixes staged files.
