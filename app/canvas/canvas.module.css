@@ -1,0 +1,364 @@
+.page {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  padding: 1.5rem 2rem 2rem;
+  max-width: 1440px;
+  min-height: 900px;
+  margin: 0 auto;
+  color: #1f1f1f;
+  background: #fafafa;
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.title {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.subtitle {
+  margin: 0.35rem 0 0;
+  font-size: 0.95rem;
+  color: #6b6b6b;
+}
+
+.controls {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+
+.metaRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: #555;
+}
+
+.metaLabel {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.7rem;
+  color: #888;
+}
+
+.metaValue {
+  font-variant-numeric: tabular-nums;
+}
+
+.badge {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+
+.source_hit {
+  background: #eef5ff;
+  color: #2454a8;
+  border-color: #c9dcff;
+}
+
+.source_miss {
+  background: #ecf8ee;
+  color: #1f6e35;
+  border-color: #c8e6c9;
+}
+
+.source_client {
+  background: #fff3e0;
+  color: #8a4b00;
+  border-color: #ffd9a8;
+}
+
+.refreshButton {
+  appearance: none;
+  border: 1px solid #1f1f1f;
+  background: #1f1f1f;
+  color: #fafafa;
+  font-size: 0.85rem;
+  font-weight: 500;
+  padding: 0.45rem 0.9rem;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.refreshButton:hover {
+  background: #000;
+}
+
+.refreshButton:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
+
+.errorBanner {
+  margin-bottom: 1rem;
+  padding: 0.6rem 0.9rem;
+  background: #fdecea;
+  border: 1px solid #f5c2c0;
+  color: #8a1f1c;
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+
+.graphScroll {
+  background: #fff;
+  border: 1px solid #ececec;
+  border-radius: 12px;
+  overflow: auto;
+  padding: 0.5rem;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.02);
+}
+
+.graphSvg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+.edges .edge {
+  stroke: #bdbdbd;
+  stroke-width: 1.5;
+}
+
+.card {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  background: #fff;
+  border: 1px solid #e5e5e5;
+  border-radius: 10px;
+  padding: 0.6rem 0.75rem 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.card_running {
+  border-color: #b9dfc3;
+  background: #f4fbf6;
+}
+
+.card_idle {
+  border-color: #d4d4d4;
+  background: #fafafa;
+}
+
+.card_paused {
+  border-color: #f6c897;
+  background: #fff5e7;
+}
+
+.card_error {
+  border-color: #f1a8a6;
+  background: #fdeceb;
+}
+
+.card_unknown {
+  border-color: #d4d4d4;
+  background: #ffffff;
+}
+
+.cardHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.4rem;
+}
+
+.cardName {
+  font-weight: 600;
+  font-size: 0.92rem;
+  color: #1f1f1f;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cardRole {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #777;
+}
+
+.flagRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.flag {
+  display: inline-block;
+  font-size: 0.68rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.flag_info {
+  background: #eef5ff;
+  color: #2454a8;
+  border-color: #c9dcff;
+}
+
+.flag_warn {
+  background: #fff3e0;
+  color: #8a4b00;
+  border-color: #ffd9a8;
+}
+
+.flag_critical {
+  background: #fdecea;
+  color: #8a1f1c;
+  border-color: #f5c2c0;
+}
+
+.workloadRow {
+  display: flex;
+  gap: 0.65rem;
+  font-size: 0.75rem;
+  color: #555;
+  font-variant-numeric: tabular-nums;
+}
+
+.workloadStat strong {
+  color: #1f1f1f;
+}
+
+.budgetRow {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.72rem;
+  color: #555;
+}
+
+.budgetLabel {
+  display: flex;
+  align-items: baseline;
+  gap: 0.25rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.budgetSlash {
+  color: #aaa;
+}
+
+.budgetPct {
+  margin-left: auto;
+  font-weight: 600;
+}
+
+.pct_ok {
+  color: #1f6e35;
+}
+
+.pct_warn {
+  color: #8a4b00;
+}
+
+.pct_critical {
+  color: #8a1f1c;
+}
+
+.budgetTrack {
+  width: 100%;
+  height: 4px;
+  background: #eee;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.budgetFill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 240ms ease;
+}
+
+.fill_ok {
+  background: #4caf50;
+}
+
+.fill_warn {
+  background: #ff9800;
+}
+
+.fill_critical {
+  background: #e53935;
+}
+
+.emptyState {
+  padding: 3rem 2rem;
+  border: 1px dashed #d4d4d4;
+  border-radius: 12px;
+  text-align: center;
+  color: #777;
+  font-size: 0.95rem;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.85rem;
+  margin-top: 1rem;
+  padding: 0.65rem 0.9rem;
+  background: #fff;
+  border: 1px solid #ececec;
+  border-radius: 8px;
+  font-size: 0.78rem;
+  color: #555;
+}
+
+.legendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.legendDot {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.dot_running {
+  background: #4caf50;
+}
+
+.dot_idle {
+  background: #bdbdbd;
+}
+
+.dot_paused {
+  background: #ff9800;
+}
+
+.dot_error {
+  background: #e53935;
+}
+
+.dot_attention {
+  background: #ffc107;
+}
+
+.dot_overloaded {
+  background: #ab47bc;
+}
