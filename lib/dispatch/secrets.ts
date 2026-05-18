@@ -76,12 +76,33 @@ export function loadDispatcherKey(
   };
 }
 
+export type RedactableSecret = OpaqueDispatcherKey | string | null | undefined;
+
 /**
- * Redact the dispatcher key value if it ever appears in a string (defense in
- * depth for log messages we don't fully control, e.g. upstream error bodies).
+ * Symmetric redactor: replace every occurrence of every supplied secret with
+ * `[REDACTED]`. Accepts either an {@link OpaqueDispatcherKey} (calls
+ * `.reveal()`) or a raw string. Empty / null / whitespace-only secrets are
+ * skipped. Used at every boundary where a string could cross a company
+ * boundary (sibling payloads, comment bodies, document descriptions) or
+ * surface to the caller (outer catch on `Error.message`), so the dispatcher
+ * key AND the origin API key are both redacted with one call.
+ */
+export function redactSecrets(text: string, ...secrets: RedactableSecret[]): string {
+  let out = text;
+  for (const secret of secrets) {
+    if (secret == null) continue;
+    const value = typeof secret === 'string' ? secret : secret.reveal();
+    if (!value || !value.trim()) continue;
+    out = out.split(value).join('[REDACTED]');
+  }
+  return out;
+}
+
+/**
+ * Redact the dispatcher key value if it ever appears in a string. Retained
+ * for compatibility — new call sites should prefer {@link redactSecrets} so
+ * the origin API key is redacted on the same pass.
  */
 export function redactKey(text: string, key: OpaqueDispatcherKey): string {
-  const value = key.reveal();
-  if (!value) return text;
-  return text.split(value).join('[REDACTED]');
+  return redactSecrets(text, key);
 }

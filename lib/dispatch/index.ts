@@ -30,5 +30,7 @@ export {
   dispatcherKeyEnvVar,
   loadDispatcherKey,
   redactKey,
-  type OpaqueDispatcherKey
+  redactSecrets,
+  type OpaqueDispatcherKey,
+  type RedactableSecret
 } from './secrets';

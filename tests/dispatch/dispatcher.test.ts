@@ -319,13 +319,13 @@ describe('dispatch — happy path', () => {
     }
   });
 
-  it('never echoes the dispatcher key to stdout, stderr, or any recorded request body', async () => {
-    // GSO-148 item 4: assert the sibling key value (raw AND the NEVER-LEAK
-    // sentinel embedded inside it) is absent from EVERY recorded call.body,
-    // not just comments and documents. That covers the mirror create POST,
-    // the mirror description PATCH, and any future call we add. The invariant
-    // is "the key never appears in any outbound payload", and the test states
-    // it directly instead of leaving it derived.
+  it('never echoes either api key to stdout, stderr, or any recorded request body', async () => {
+    // GSO-148 item 4 + GSO-149: assert the sibling dispatcher key AND the
+    // origin api key (and the shared `NEVER-LEAK` sentinel) are absent from
+    // EVERY recorded call.body, not just comments and documents. Covers the
+    // mirror create POST, the mirror description PATCH, and any future call
+    // we add. The invariant is "neither key ever appears in any outbound
+    // payload" — stated directly, not derived.
     const fetchImpl = makeTransport(state);
     await dispatch(SOURCE_ID, TARGET_COMPANY_ID, {
       env: SAMPLE_ENV,
@@ -335,10 +335,12 @@ describe('dispatch — happy path', () => {
 
     for (const line of state.stdoutCapture) {
       expect(line).not.toContain(SIBLING_API_KEY);
+      expect(line).not.toContain(ORIGIN_API_KEY);
       expect(line).not.toContain('NEVER-LEAK');
     }
     for (const line of state.stderrCapture) {
       expect(line).not.toContain(SIBLING_API_KEY);
+      expect(line).not.toContain(ORIGIN_API_KEY);
       expect(line).not.toContain('NEVER-LEAK');
     }
 
@@ -356,6 +358,7 @@ describe('dispatch — happy path', () => {
     for (const call of state.calls) {
       const label = `${call.method} ${call.url}`;
       expect(call.body, `${label} body leaked raw sibling key`).not.toContain(SIBLING_API_KEY);
+      expect(call.body, `${label} body leaked raw origin key`).not.toContain(ORIGIN_API_KEY);
       expect(call.body, `${label} body leaked NEVER-LEAK sentinel`).not.toContain('NEVER-LEAK');
     }
   });
@@ -518,7 +521,10 @@ describe('dispatch — refusal paths', () => {
     ).toBe(false);
   });
 
-  it('redacts any leaked key from error messages', async () => {
+  it('redacts both api keys from error messages surfacing to the caller', async () => {
+    // GSO-149: the outer catch must redact the origin api key as well as
+    // the sibling dispatcher key, in case a buggy upstream echoes either
+    // bearer token back into an error body.
     const fetchImpl: typeof fetch = async (input, init = {}) => {
       const url = typeof input === 'string' ? input : (input as URL).toString();
       const method = (init.method ?? 'GET').toUpperCase();
@@ -544,11 +550,13 @@ describe('dispatch — refusal paths', () => {
       if (url.endsWith(`/api/companies/${ORIGIN_COMPANY_ID}`) && method === 'GET') {
         return jsonResponse(200, { id: ORIGIN_COMPANY_ID, prefix: 'GSO' });
       }
-      // Sibling fetch fails with a 500 that includes the key value in the
-      // body (simulating a buggy upstream).
-      return new Response(`upstream error: token=${SIBLING_API_KEY} not accepted`, {
-        status: 500
-      });
+      // Sibling fetch fails with a 500 that includes BOTH key values in the
+      // body (a worst-case buggy upstream echoing the bearer back). The
+      // outer catch must redact both tokens symmetrically.
+      return new Response(
+        `upstream error: sibling=${SIBLING_API_KEY} origin=${ORIGIN_API_KEY} not accepted`,
+        { status: 500 }
+      );
     };
 
     try {
@@ -562,6 +570,76 @@ describe('dispatch — refusal paths', () => {
       const message = (err as Error).message;
       expect(message).toContain('[REDACTED]');
       expect(message).not.toContain(SIBLING_API_KEY);
+      expect(message).not.toContain(ORIGIN_API_KEY);
+    }
+  });
+
+  it('redacts both api keys from compensating PATCH description and audit comment', async () => {
+    // GSO-149: when compensateFailedDispatch reaches the sibling with a
+    // wireError-derived reason, the reason text must have both keys redacted
+    // before it lands in the sibling-side PATCH description or the audit
+    // comment. Otherwise an origin-side fetch failure (step 11/12) could
+    // exfiltrate the origin api key into the sibling company's audit trail.
+    const state = freshState();
+    const baseTransport = makeTransport(state);
+    let injectedFailure = false;
+    const fetchImpl: typeof fetch = async (input, init = {}) => {
+      const url = typeof input === 'string' ? input : (input as URL).toString();
+      const method = (init.method ?? 'GET').toUpperCase();
+      // Inject failure on the source-side metadata PUT (step 11, origin
+      // auth). The 500 body returns BOTH keys, simulating a buggy upstream
+      // that echoes the bearer back. compensateFailedDispatch must redact
+      // both before writing to the sibling.
+      if (
+        !injectedFailure &&
+        method === 'PUT' &&
+        url.endsWith(`/api/issues/${SOURCE_ID}/documents/${DISPATCH_METADATA_DOC_KEY}`)
+      ) {
+        injectedFailure = true;
+        await baseTransport(input, init);
+        return new Response(
+          `boom: sibling=${SIBLING_API_KEY} origin=${ORIGIN_API_KEY} rejected`,
+          { status: 503 }
+        );
+      }
+      return baseTransport(input, init);
+    };
+
+    await expect(
+      dispatch(SOURCE_ID, TARGET_COMPANY_ID, {
+        env: SAMPLE_ENV,
+        fetchImpl,
+        envSource: { [ENV_VAR_NAME]: SIBLING_API_KEY },
+        runId: 'run-comp-redact'
+      })
+    ).rejects.toBeTruthy();
+
+    const cancelPatch = state.calls.find(
+      (c) =>
+        c.method === 'PATCH' &&
+        c.url.endsWith(`/issues/${MIRROR_ID}`) &&
+        JSON.parse(c.body)?.status === 'cancelled'
+    );
+    expect(cancelPatch, 'expected compensating PATCH to status=cancelled').toBeTruthy();
+    expect(cancelPatch!.body).not.toContain(SIBLING_API_KEY);
+    expect(cancelPatch!.body).not.toContain(ORIGIN_API_KEY);
+    expect(cancelPatch!.body).not.toContain('NEVER-LEAK');
+    expect(cancelPatch!.body).toContain('[REDACTED]');
+
+    const auditComment = state.calls.find(
+      (c) => c.method === 'POST' && c.url.endsWith(`/api/issues/${MIRROR_ID}/comments`)
+    );
+    expect(auditComment, 'expected compensating audit comment on mirror').toBeTruthy();
+    expect(auditComment!.body).not.toContain(SIBLING_API_KEY);
+    expect(auditComment!.body).not.toContain(ORIGIN_API_KEY);
+    expect(auditComment!.body).not.toContain('NEVER-LEAK');
+    expect(auditComment!.body).toContain('[REDACTED]');
+
+    // Belt-and-braces: no recorded call (anywhere) leaked either raw key.
+    for (const call of state.calls) {
+      const label = `${call.method} ${call.url}`;
+      expect(call.body, `${label} body leaked raw sibling key`).not.toContain(SIBLING_API_KEY);
+      expect(call.body, `${label} body leaked raw origin key`).not.toContain(ORIGIN_API_KEY);
     }
   });
 });

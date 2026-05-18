@@ -14,7 +14,7 @@ import {
   DispatchAuthorizationError,
   checkDispatchAuthorization
 } from './authorization';
-import { loadDispatcherKey, redactKey, type OpaqueDispatcherKey } from './secrets';
+import { loadDispatcherKey, redactSecrets, type OpaqueDispatcherKey } from './secrets';
 
 export const DISPATCH_METADATA_DOC_KEY = 'dispatch-metadata';
 
@@ -325,6 +325,7 @@ export async function dispatch(
         reason: wireError instanceof Error ? wireError.message : String(wireError),
         ctx,
         dispatcherKey,
+        originApiKey: env.apiKey,
         runId
       });
       throw wireError;
@@ -337,10 +338,12 @@ export async function dispatch(
       mirrorIssueUrl: mirrorUrl
     };
   } catch (err) {
-    // Defense in depth: never let the key value leak through an Error.message
-    // from any upstream service.
+    // Defense in depth: never let either key value leak through an Error
+    // message from any upstream service. Both the sibling dispatcher key and
+    // the origin API key are redacted symmetrically, so origin-side fetch
+    // failures cannot surface the origin token to the caller.
     if (err instanceof Error && err.message) {
-      err.message = redactKey(err.message, dispatcherKey);
+      err.message = redactSecrets(err.message, dispatcherKey, env.apiKey);
     }
     throw err;
   }
@@ -464,10 +467,26 @@ async function compensateFailedDispatch(args: {
   reason: string;
   ctx: RequestCtx;
   dispatcherKey: OpaqueDispatcherKey;
+  /**
+   * Origin-side API key. Steps 11–12 of `dispatch()` (source-side metadata
+   * PUT and source-side comment) authenticate with this key, so a
+   * `wireError.message` raised from those steps may transitively echo it.
+   * Redact both keys before any text crosses the company boundary.
+   */
+  originApiKey: string;
   runId: string | undefined;
 }): Promise<void> {
-  const { mirrorId, mirrorIdentifier, sourceIdentifier, reason, ctx, dispatcherKey, runId } = args;
-  const redactedReason = redactKey(reason, dispatcherKey).slice(0, 500);
+  const {
+    mirrorId,
+    mirrorIdentifier,
+    sourceIdentifier,
+    reason,
+    ctx,
+    dispatcherKey,
+    originApiKey,
+    runId
+  } = args;
+  const redactedReason = redactSecrets(reason, dispatcherKey, originApiKey).slice(0, 500);
   const explanation =
     `Dispatch from origin issue \`${sourceIdentifier}\` failed mid-flight after this mirror ` +
     `was created. The mirror is incomplete (description placeholder may not be filled, ` +
