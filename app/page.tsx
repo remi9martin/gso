@@ -7,6 +7,9 @@ export default function HomePage() {
         Canvas, Triage Inbox, and Budget &amp; Governance.
       </p>
       <p style={{ marginTop: '2rem' }}>
+        Org Canvas: <a href="/canvas">/canvas</a>
+      </p>
+      <p>
         Health: <a href="/api/healthz">/api/healthz</a>
       </p>
     </main>
