@@ -597,10 +597,9 @@ describe('dispatch — refusal paths', () => {
       ) {
         injectedFailure = true;
         await baseTransport(input, init);
-        return new Response(
-          `boom: sibling=${SIBLING_API_KEY} origin=${ORIGIN_API_KEY} rejected`,
-          { status: 503 }
-        );
+        return new Response(`boom: sibling=${SIBLING_API_KEY} origin=${ORIGIN_API_KEY} rejected`, {
+          status: 503
+        });
       }
       return baseTransport(input, init);
     };
