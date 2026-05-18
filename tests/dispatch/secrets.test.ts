@@ -1,3 +1,4 @@
+import * as util from 'node:util';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -47,6 +48,18 @@ describe('loadDispatcherKey', () => {
       expect(e.envVarName).toBe('GSO_DISPATCHER_KEY_MISSING_COMPANY');
       expect(e.message).toContain('GSO_DISPATCHER_KEY_MISSING_COMPANY');
     }
+  });
+
+  it('util.inspect renders a single redacted line — no function bodies, no raw value', () => {
+    const env = { GSO_DISPATCHER_KEY_TARGET: 'super-secret-token' };
+    const key = loadDispatcherKey('target', env);
+    const inspected = util.inspect(key);
+    expect(inspected).not.toContain('super-secret-token');
+    expect(inspected).not.toContain('[Function');
+    expect(inspected).toContain('GSO_DISPATCHER_KEY_TARGET');
+    expect(inspected).toContain('target');
+    // Single-line: no embedded newlines.
+    expect(inspected.includes('\n')).toBe(false);
   });
 });
 
@@ -99,5 +112,35 @@ describe('checkDispatchAuthorization', () => {
     } catch (err) {
       expect((err as DispatchAuthorizationError).code).toBe('marker-malformed');
     }
+  });
+
+  it('refuses prose that embeds "authorized: true" mid-sentence', () => {
+    // The regex must be line-anchored — `not authorized: true` is NOT
+    // permission. (See GSO-148 item 1.)
+    try {
+      checkDispatchAuthorization('GSO-1', { body: 'not authorized: true' });
+      throw new Error('expected throw');
+    } catch (err) {
+      expect((err as DispatchAuthorizationError).code).toBe('marker-malformed');
+    }
+  });
+
+  it('refuses prose that embeds bare "true" mid-sentence', () => {
+    try {
+      checkDispatchAuthorization('GSO-1', { body: 'definitely not true here' });
+      throw new Error('expected throw');
+    } catch (err) {
+      expect((err as DispatchAuthorizationError).code).toBe('marker-malformed');
+    }
+  });
+
+  it('accepts indented `authorized: true` (line-anchored, not column-anchored)', () => {
+    expect(() => checkDispatchAuthorization('GSO-1', { body: '  authorized: true' })).not.toThrow();
+  });
+
+  it('accepts `authorized: true` on a later line (multi-line YAML)', () => {
+    expect(() =>
+      checkDispatchAuthorization('GSO-1', { body: 'by: triage\nauthorized: true\n' })
+    ).not.toThrow();
   });
 });
