@@ -75,6 +75,7 @@ A passing badge will be added once the GitHub remote and the `main` branch exist
 
 - **`npm audit`** runs in CI after `npm ci`. Builds fail on `high` or `critical` advisories. Triage lower-severity findings locally with `npm audit` (no level flag).
 - **Dependabot** (`.github/dependabot.yml`) opens weekly PRs for `npm` and `github-actions` updates and emits security PRs out-of-band when GitHub publishes a matching advisory.
+- **CodeQL** (`.github/workflows/codeql.yml`) runs static analysis on every push and PR plus a weekly Monday scan, with the `security-extended` query pack.
 
 ## Deploy path
 
