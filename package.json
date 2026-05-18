@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "GSO — operating layer for solo AI founders, riding Paperclip primitives.",
+  "license": "UNLICENSED",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
