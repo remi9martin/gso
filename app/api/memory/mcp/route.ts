@@ -48,11 +48,3 @@ async function handle(req: NextRequest): Promise<Response> {
 export async function POST(req: NextRequest): Promise<Response> {
   return handle(req);
 }
-
-export async function GET(req: NextRequest): Promise<Response> {
-  return handle(req);
-}
-
-export async function DELETE(req: NextRequest): Promise<Response> {
-  return handle(req);
-}
