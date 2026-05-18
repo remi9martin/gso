@@ -356,6 +356,7 @@ describe('dispatch — happy path', () => {
     for (const call of state.calls) {
       const label = `${call.method} ${call.url}`;
       expect(call.body, `${label} body leaked raw sibling key`).not.toContain(SIBLING_API_KEY);
+      expect(call.body, `${label} body leaked raw origin key`).not.toContain(ORIGIN_API_KEY);
       expect(call.body, `${label} body leaked NEVER-LEAK sentinel`).not.toContain('NEVER-LEAK');
     }
   });
@@ -585,6 +586,73 @@ describe('dispatch — refusal paths', () => {
     expect(String(JSON.parse(cancelPatch!.body).description)).toContain('DISPATCH FAILED');
   });
 
+  it('compensates and redacts both credentials when the SOURCE-side metadata PUT (step 11) fails', async () => {
+    // GSO-158: the existing compensation test injects failure on the
+    // mirror-side metadata PUT (step 9), exercising the SIBLING credential
+    // surface. Step 11 — the source-side metadata PUT — uses the ORIGIN
+    // credential. A buggy origin upstream could echo BOTH bearers in the
+    // failure body (e.g. an auth-header capture plus an embedded token).
+    // Compensation must still cancel the orphan mirror and redact both raw
+    // values from the cancel PATCH description AND the audit comment.
+    const state = freshState();
+    const baseTransport = makeTransport(state);
+    let injectedFailure = false;
+    const fetchImpl: typeof fetch = async (input, init = {}) => {
+      const url = typeof input === 'string' ? input : (input as URL).toString();
+      const method = (init.method ?? 'GET').toUpperCase();
+      if (
+        !injectedFailure &&
+        method === 'PUT' &&
+        url.endsWith(`/api/issues/${SOURCE_ID}/documents/${DISPATCH_METADATA_DOC_KEY}`)
+      ) {
+        injectedFailure = true;
+        // Delegate so the failed call is still recorded, then override the
+        // response with a 503 whose body echoes BOTH raw credentials.
+        await baseTransport(input, init);
+        return new Response(
+          `upstream exploded: origin_token=${ORIGIN_API_KEY} sibling_token=${SIBLING_API_KEY}`,
+          { status: 503 }
+        );
+      }
+      return baseTransport(input, init);
+    };
+
+    await expect(
+      dispatch(SOURCE_ID, TARGET_COMPANY_ID, {
+        env: SAMPLE_ENV,
+        fetchImpl,
+        envSource: { [ENV_VAR_NAME]: SIBLING_API_KEY },
+        runId: 'run-comp-source'
+      })
+    ).rejects.toBeTruthy();
+
+    // Compensation must still cancel the orphan mirror.
+    const cancelPatch = state.calls.find(
+      (c) =>
+        c.method === 'PATCH' &&
+        c.url.endsWith(`/issues/${MIRROR_ID}`) &&
+        JSON.parse(c.body)?.status === 'cancelled'
+    );
+    expect(cancelPatch, 'expected a compensating PATCH to status=cancelled').toBeTruthy();
+    expect(cancelPatch!.authorization).toBe(`Bearer ${SIBLING_API_KEY}`);
+    expect(cancelPatch!.body).not.toContain(ORIGIN_API_KEY);
+    expect(cancelPatch!.body).not.toContain(SIBLING_API_KEY);
+    expect(cancelPatch!.body).not.toContain('NEVER-LEAK');
+
+    // The compensating audit comment on the mirror must also contain neither.
+    const auditComment = state.calls.find(
+      (c) => c.method === 'POST' && c.url.endsWith(`/issues/${MIRROR_ID}/comments`)
+    );
+    expect(auditComment, 'expected a compensating audit comment on the mirror').toBeTruthy();
+    expect(auditComment!.body).not.toContain(ORIGIN_API_KEY);
+    expect(auditComment!.body).not.toContain(SIBLING_API_KEY);
+    expect(auditComment!.body).not.toContain('NEVER-LEAK');
+
+    // Sanity: the compensating description should reflect that the dispatch
+    // failed (otherwise we may not have hit the compensation path at all).
+    expect(String(JSON.parse(cancelPatch!.body).description)).toContain('DISPATCH FAILED');
+  });
+
   it('redacts any leaked key from error messages', async () => {
     const fetchImpl: typeof fetch = async (input, init = {}) => {
       const url = typeof input === 'string' ? input : (input as URL).toString();
@@ -629,6 +697,59 @@ describe('dispatch — refusal paths', () => {
       const message = (err as Error).message;
       expect(message).toContain('[REDACTED]');
       expect(message).not.toContain(SIBLING_API_KEY);
+    }
+  });
+
+  it('redacts BOTH origin and sibling credentials when a 500 body echoes both bearers', async () => {
+    // GSO-158: the outer-catch in `dispatch()` redacts via the symmetric
+    // `redactKeys([dispatcherKey, env.apiKey])`. An upstream that captured an
+    // Authorization header alongside another token could surface BOTH raw
+    // values in the same error body. The thrown `Error.message` must contain
+    // `[REDACTED]` and neither raw credential.
+    const fetchImpl: typeof fetch = async (input, init = {}) => {
+      const url = typeof input === 'string' ? input : (input as URL).toString();
+      const method = (init.method ?? 'GET').toUpperCase();
+      if (url.endsWith(`/api/issues/${SOURCE_ID}`) && method === 'GET') {
+        return jsonResponse(200, {
+          id: SOURCE_ID,
+          identifier: SOURCE_IDENTIFIER,
+          title: 'Body returns both keys for some reason',
+          description: SOURCE_DESCRIPTION,
+          priority: 'high',
+          assigneeAgentId: null,
+          parentId: null,
+          projectId: null,
+          goalId: null
+        });
+      }
+      if (
+        url.endsWith(`/api/issues/${SOURCE_ID}/documents/dispatch-authorized`) &&
+        method === 'GET'
+      ) {
+        return jsonResponse(200, { key: 'dispatch-authorized', body: 'authorized: true' });
+      }
+      if (url.endsWith(`/api/companies/${ORIGIN_COMPANY_ID}`) && method === 'GET') {
+        return jsonResponse(200, { id: ORIGIN_COMPANY_ID, prefix: 'GSO' });
+      }
+      return new Response(
+        `upstream error: origin_token=${ORIGIN_API_KEY} sibling_token=${SIBLING_API_KEY} not accepted`,
+        { status: 500 }
+      );
+    };
+
+    try {
+      await dispatch(SOURCE_ID, TARGET_COMPANY_ID, {
+        env: SAMPLE_ENV,
+        fetchImpl,
+        envSource: { [ENV_VAR_NAME]: SIBLING_API_KEY }
+      });
+      throw new Error('expected throw');
+    } catch (err) {
+      const message = (err as Error).message;
+      expect(message).toContain('[REDACTED]');
+      expect(message).not.toContain(ORIGIN_API_KEY);
+      expect(message).not.toContain(SIBLING_API_KEY);
+      expect(message).not.toContain('NEVER-LEAK');
     }
   });
 });
