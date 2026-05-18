@@ -7,7 +7,7 @@
 
 const FENCE = '---';
 
-export type SuggestedTag = 'venture' | 'project' | 'idea' | 'todo';
+export type SuggestedTag = 'venture' | 'project' | 'idea' | 'todo' | 'needs_human';
 
 export interface DraftFrontMatter {
   sourcePointer: string;
@@ -79,7 +79,9 @@ export function parseDraftDescription(description: string): {
   }
 
   if (!isSuggestedTag(raw.suggestedTag)) {
-    throw new Error(`Draft front-matter "suggestedTag" must be venture|project|idea|todo`);
+    throw new Error(
+      `Draft front-matter "suggestedTag" must be venture|project|idea|todo|needs_human`
+    );
   }
 
   const summary = lines
@@ -100,7 +102,13 @@ export function parseDraftDescription(description: string): {
 }
 
 function isSuggestedTag(value: string): value is SuggestedTag {
-  return value === 'venture' || value === 'project' || value === 'idea' || value === 'todo';
+  return (
+    value === 'venture' ||
+    value === 'project' ||
+    value === 'idea' ||
+    value === 'todo' ||
+    value === 'needs_human'
+  );
 }
 
 function escapeValue(value: string): string {
