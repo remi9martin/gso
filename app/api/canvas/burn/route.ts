@@ -15,9 +15,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const store = getBurnSnapshotStore();
-    const { series, source } = await readBurnSeries(agentId, () =>
-      loadBurnSeries(store, agentId)
-    );
+    const { series, source } = await readBurnSeries(agentId, () => loadBurnSeries(store, agentId));
     return NextResponse.json(series, {
       headers: {
         'Cache-Control': 'no-store',
@@ -26,8 +24,11 @@ export async function GET(request: NextRequest) {
     });
   } catch (err) {
     console.error('[gso] /api/canvas/burn failed', err);
-    return NextResponse.json({ error: 'internal_error', message: 'Burn series load failed' }, {
-      status: 500
-    });
+    return NextResponse.json(
+      { error: 'internal_error', message: 'Burn series load failed' },
+      {
+        status: 500
+      }
+    );
   }
 }

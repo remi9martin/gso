@@ -1,9 +1,5 @@
 import { enumerateUtcDays, utcDateDaysAgo, toUtcDate } from './date-utils';
-import type {
-  BurnSnapshotSeries,
-  BurnSnapshotSeriesPoint,
-  BurnSnapshotStore
-} from './types';
+import type { BurnSnapshotSeries, BurnSnapshotSeriesPoint, BurnSnapshotStore } from './types';
 
 export const DEFAULT_BURN_SERIES_DAYS = 30;
 

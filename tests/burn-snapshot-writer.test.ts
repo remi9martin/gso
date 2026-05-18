@@ -3,7 +3,9 @@ import { MemoryBurnSnapshotStore } from '@/lib/canvas/burn-snapshot/memory-store
 import { writeBurnSnapshotsForBundle } from '@/lib/canvas/burn-snapshot/writer';
 import type { CanvasBundle } from '@/lib/canvas/types';
 
-function makeBundle(agents: { agentId: string; spent: number | null; budget: number | null }[]): CanvasBundle {
+function makeBundle(
+  agents: { agentId: string; spent: number | null; budget: number | null }[]
+): CanvasBundle {
   return {
     companyId: 'co-test',
     generatedAt: new Date().toISOString(),
@@ -53,7 +55,11 @@ describe('writeBurnSnapshotsForBundle', () => {
       { agentId: 'a1', spent: 100, budget: 1000 },
       { agentId: 'a2', spent: 500, budget: 1000 }
     ]);
-    const result = await writeBurnSnapshotsForBundle(store, bundle, new Date('2026-05-01T12:00:00Z'));
+    const result = await writeBurnSnapshotsForBundle(
+      store,
+      bundle,
+      new Date('2026-05-01T12:00:00Z')
+    );
     expect(result.written).toBe(2);
     expect(result.deduped).toBe(0);
     expect(result.skippedMissingBudget).toBe(0);
@@ -81,7 +87,11 @@ describe('writeBurnSnapshotsForBundle', () => {
   it('skips agents with null budget', async () => {
     const store = new MemoryBurnSnapshotStore();
     const bundle = makeBundle([{ agentId: 'a1', spent: 100, budget: null }]);
-    const result = await writeBurnSnapshotsForBundle(store, bundle, new Date('2026-05-01T12:00:00Z'));
+    const result = await writeBurnSnapshotsForBundle(
+      store,
+      bundle,
+      new Date('2026-05-01T12:00:00Z')
+    );
     expect(result.written).toBe(0);
     expect(result.skippedMissingBudget).toBe(1);
   });
@@ -89,14 +99,22 @@ describe('writeBurnSnapshotsForBundle', () => {
   it('skips agents with zero budget', async () => {
     const store = new MemoryBurnSnapshotStore();
     const bundle = makeBundle([{ agentId: 'a1', spent: 0, budget: 0 }]);
-    const result = await writeBurnSnapshotsForBundle(store, bundle, new Date('2026-05-01T12:00:00Z'));
+    const result = await writeBurnSnapshotsForBundle(
+      store,
+      bundle,
+      new Date('2026-05-01T12:00:00Z')
+    );
     expect(result.skippedMissingBudget).toBe(1);
   });
 
   it('skips agents with null spent', async () => {
     const store = new MemoryBurnSnapshotStore();
     const bundle = makeBundle([{ agentId: 'a1', spent: null, budget: 1000 }]);
-    const result = await writeBurnSnapshotsForBundle(store, bundle, new Date('2026-05-01T12:00:00Z'));
+    const result = await writeBurnSnapshotsForBundle(
+      store,
+      bundle,
+      new Date('2026-05-01T12:00:00Z')
+    );
     expect(result.skippedMissingBudget).toBe(1);
   });
 });

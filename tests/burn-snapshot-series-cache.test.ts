@@ -1,5 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { readBurnSeries, __resetBurnSeriesCacheForTests } from '@/lib/canvas/burn-snapshot/series-cache';
+import {
+  readBurnSeries,
+  __resetBurnSeriesCacheForTests
+} from '@/lib/canvas/burn-snapshot/series-cache';
 import type { BurnSnapshotSeries } from '@/lib/canvas/burn-snapshot/types';
 
 function makeSeries(agentId: string): BurnSnapshotSeries {
@@ -19,7 +22,10 @@ describe('readBurnSeries cache', () => {
 
   it('returns miss on first load, hit on second', async () => {
     let calls = 0;
-    const loader = async () => { calls++; return makeSeries('a1'); };
+    const loader = async () => {
+      calls++;
+      return makeSeries('a1');
+    };
     const r1 = await readBurnSeries('a1', loader);
     const r2 = await readBurnSeries('a1', loader);
     expect(r1.source).toBe('miss');
@@ -29,7 +35,10 @@ describe('readBurnSeries cache', () => {
 
   it('expires after TTL', async () => {
     let calls = 0;
-    const loader = async () => { calls++; return makeSeries('a1'); };
+    const loader = async () => {
+      calls++;
+      return makeSeries('a1');
+    };
     let t = 1000;
     const now = () => t;
     await readBurnSeries('a1', loader, 100, now);
@@ -40,14 +49,24 @@ describe('readBurnSeries cache', () => {
   });
 
   it('caches per agentId independently', async () => {
-    let a1calls = 0, a2calls = 0;
-    const r1 = await readBurnSeries('a1', async () => { a1calls++; return makeSeries('a1'); });
-    const r2 = await readBurnSeries('a2', async () => { a2calls++; return makeSeries('a2'); });
+    let a1calls = 0,
+      a2calls = 0;
+    const r1 = await readBurnSeries('a1', async () => {
+      a1calls++;
+      return makeSeries('a1');
+    });
+    const r2 = await readBurnSeries('a2', async () => {
+      a2calls++;
+      return makeSeries('a2');
+    });
     expect(r1.source).toBe('miss');
     expect(r2.source).toBe('miss');
     expect(a1calls).toBe(1);
     expect(a2calls).toBe(1);
-    const r3 = await readBurnSeries('a1', async () => { a1calls++; return makeSeries('a1'); });
+    const r3 = await readBurnSeries('a1', async () => {
+      a1calls++;
+      return makeSeries('a1');
+    });
     expect(r3.source).toBe('hit');
     expect(a1calls).toBe(1);
   });

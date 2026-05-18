@@ -24,10 +24,7 @@ export class MemoryBurnSnapshotStore implements BurnSnapshotStore {
     return { written: true };
   }
 
-  async listForAgent(
-    agentId: string,
-    range: BurnSnapshotRangeQuery
-  ): Promise<BurnSnapshot[]> {
+  async listForAgent(agentId: string, range: BurnSnapshotRangeQuery): Promise<BurnSnapshot[]> {
     const out: BurnSnapshot[] = [];
     for (const row of this.rows.values()) {
       if (row.agentId !== agentId) continue;
