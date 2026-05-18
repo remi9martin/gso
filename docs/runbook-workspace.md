@@ -46,12 +46,12 @@ Worktrees give each heartbeat its own working copy backed by a shared object dat
 
 ## Lifecycle
 
-| When | Action |
-| --- | --- |
-| Heartbeat start | Run the prelude. Get back the absolute path of `.worktrees/<issue-id>/`. `cd` into it. |
-| Heartbeat work | Edit, commit, push from inside the worktree. Use whatever branch name you want; the default `work/<issue-id>` is just a starting point — rename with `git branch -m feat/<issue-id>-<slug>`. |
-| Issue closed (`done` / `cancelled`) | The worktree can be pruned: `git worktree remove .worktrees/<issue-id>`. Safe to do as a cleanup pass; do **not** delete a worktree whose branch has unmerged commits. |
-| Pre-commit hook failures | Stay inside the worktree. Never `git stash` to the workspace root — that's how cross-issue stashes happened. |
+| When                                | Action                                                                                                                                                                                       |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Heartbeat start                     | Run the prelude. Get back the absolute path of `.worktrees/<issue-id>/`. `cd` into it.                                                                                                       |
+| Heartbeat work                      | Edit, commit, push from inside the worktree. Use whatever branch name you want; the default `work/<issue-id>` is just a starting point — rename with `git branch -m feat/<issue-id>-<slug>`. |
+| Issue closed (`done` / `cancelled`) | The worktree can be pruned: `git worktree remove .worktrees/<issue-id>`. Safe to do as a cleanup pass; do **not** delete a worktree whose branch has unmerged commits.                       |
+| Pre-commit hook failures            | Stay inside the worktree. Never `git stash` to the workspace root — that's how cross-issue stashes happened.                                                                                 |
 
 ---
 
