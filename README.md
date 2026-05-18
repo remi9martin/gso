@@ -127,7 +127,10 @@ Rollback: set `BURN_SNAPSHOT_STORE=memory` (or unset) and redeploy. The Postgres
 
 ## Pre-commit
 
-`npm install` runs `husky` which installs the `.husky/pre-commit` hook. The hook runs `lint-staged`, which Prettier-formats and ESLint-fixes staged files.
+`npm install` runs `husky` (via the `prepare` script) which installs the `.husky/pre-commit` hook. The hook runs `lint-staged`, which Prettier-formats and ESLint-fixes staged files in-place before the commit lands. The CI format-check job remains the authoritative gate; the hook is a faster local feedback loop.
+
+- **Worktree gotcha:** the `.husky/_` shim directory is created by `npm install`, not committed. If you commit from a fresh worktree without running `npm install` first, the hook is silently inactive and CI will catch any formatting issues instead. Always `npm install` in a new worktree.
+- **Bypass:** if you have a good reason to skip the hook (emergency revert, partial work-in-progress commit) use `git commit --no-verify`. CI will still run `prettier --check` on the PR.
 
 ## Repo layout
 
