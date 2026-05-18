@@ -1,0 +1,190 @@
+name: Deploy email-intake
+
+# Manual-only deploy. Each invocation:
+#   1. mints a fresh EMAIL_INTAKE_TOKEN and its sha256 hash
+#   2. upserts EMAIL_INTAKE_BEARER_HASH + GSO_INTAKE_PROJECT_ID +
+#      GSO_INTAKE_ASSIGNEE_USER_ID on the Vercel production env
+#   3. deploys workers/email-intake to Cloudflare with the raw token as a
+#      worker secret
+#   4. upserts the Email Routing rule (intake@damgsolutions.com → worker)
+# The bearer pair lives only inside this run — the raw token never leaves CF
+# and the hash never leaves Vercel.
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-email-intake
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy email-intake worker
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+
+      - name: Preflight — required secrets and vars
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+          GSO_INTAKE_PROJECT_ID: ${{ vars.GSO_INTAKE_PROJECT_ID }}
+          GSO_INTAKE_ASSIGNEE_USER_ID: ${{ vars.GSO_INTAKE_ASSIGNEE_USER_ID }}
+        run: |
+          set -euo pipefail
+          missing=()
+          for name in VERCEL_TOKEN VERCEL_PROJECT_ID VERCEL_ORG_ID \
+                      CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID CLOUDFLARE_ZONE_ID \
+                      GSO_INTAKE_PROJECT_ID GSO_INTAKE_ASSIGNEE_USER_ID; do
+            if [ -z "${!name:-}" ]; then
+              missing+=("$name")
+            fi
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Missing required inputs: ${missing[*]}"
+            echo "Secrets must be set under repo Settings → Secrets and variables → Actions → Secrets."
+            echo "Vars (GSO_INTAKE_*) must be set under the Variables tab in the same screen."
+            exit 1
+          fi
+          echo "All 6 secrets and 2 vars present."
+
+      - name: Mint bearer pair
+        id: mint
+        run: |
+          set -euo pipefail
+          token="$(openssl rand -hex 32)"
+          hash="$(printf '%s' "$token" | sha256sum | awk '{print $1}')"
+          fingerprint="…${hash: -8}"
+          # Mask both so accidental echoes downstream are scrubbed.
+          echo "::add-mask::${token}"
+          echo "::add-mask::${hash}"
+          {
+            echo "token=${token}"
+            echo "hash=${hash}"
+            echo "fingerprint=${fingerprint}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Sync env vars to Vercel (production)
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          EMAIL_INTAKE_BEARER_HASH: ${{ steps.mint.outputs.hash }}
+          GSO_INTAKE_PROJECT_ID: ${{ vars.GSO_INTAKE_PROJECT_ID }}
+          GSO_INTAKE_ASSIGNEE_USER_ID: ${{ vars.GSO_INTAKE_ASSIGNEE_USER_ID }}
+        run: |
+          set -euo pipefail
+          base="https://api.vercel.com/v10/projects/${VERCEL_PROJECT_ID}/env"
+          qs="?teamId=${VERCEL_ORG_ID}"
+          upsert() {
+            local key="$1" value="$2"
+            local ids
+            ids="$(curl -fsS -H "Authorization: Bearer ${VERCEL_TOKEN}" \
+              "${base}${qs}" \
+              | jq -r --arg k "$key" '.envs[] | select(.key == $k and (.target | index("production"))) | .id')"
+            while IFS= read -r id; do
+              [ -z "$id" ] && continue
+              curl -fsS -X DELETE \
+                -H "Authorization: Bearer ${VERCEL_TOKEN}" \
+                "${base}/${id}${qs}" > /dev/null
+            done <<< "$ids"
+            curl -fsS -X POST \
+              -H "Authorization: Bearer ${VERCEL_TOKEN}" \
+              -H "Content-Type: application/json" \
+              "${base}${qs}" \
+              -d "$(jq -n --arg k "$key" --arg v "$value" \
+                    '{key:$k,value:$v,type:"encrypted",target:["production"]}')" \
+              > /dev/null
+            echo "Synced ${key} to Vercel (production)."
+          }
+          upsert EMAIL_INTAKE_BEARER_HASH "$EMAIL_INTAKE_BEARER_HASH"
+          upsert GSO_INTAKE_PROJECT_ID "$GSO_INTAKE_PROJECT_ID"
+          upsert GSO_INTAKE_ASSIGNEE_USER_ID "$GSO_INTAKE_ASSIGNEE_USER_ID"
+
+      - name: Install worker deps
+        working-directory: workers/email-intake
+        run: npm ci --no-audit --no-fund
+
+      - name: Deploy worker to Cloudflare
+        id: wrangler
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: workers/email-intake
+          command: deploy
+          secrets: |
+            EMAIL_INTAKE_TOKEN
+        env:
+          EMAIL_INTAKE_TOKEN: ${{ steps.mint.outputs.token }}
+
+      - name: Upsert Email Routing rule (intake@damgsolutions.com → gso-email-intake)
+        id: routing
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+        run: |
+          set -euo pipefail
+          base="https://api.cloudflare.com/client/v4/zones/${CLOUDFLARE_ZONE_ID}/email/routing/rules"
+          rule_body="$(jq -n '{
+            name: "intake@damgsolutions.com -> gso-email-intake",
+            enabled: true,
+            matchers: [{type:"literal", field:"to", value:"intake@damgsolutions.com"}],
+            actions: [{type:"worker", value:["gso-email-intake"]}]
+          }')"
+          existing="$(curl -fsS \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            "${base}?per_page=50" \
+            | jq -r '.result[]
+                | select(.matchers[]? | (.field == "to" and .value == "intake@damgsolutions.com"))
+                | .tag' \
+            | head -n1)"
+          if [ -n "$existing" ] && [ "$existing" != "null" ]; then
+            rule_id="$existing"
+            curl -fsS -X PUT \
+              -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+              -H "Content-Type: application/json" \
+              "${base}/${rule_id}" -d "$rule_body" > /dev/null
+            echo "Updated existing routing rule ${rule_id}"
+          else
+            response="$(curl -fsS -X POST \
+              -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+              -H "Content-Type: application/json" \
+              "${base}" -d "$rule_body")"
+            rule_id="$(echo "$response" | jq -r '.result.tag')"
+            echo "Created routing rule ${rule_id}"
+          fi
+          echo "rule_id=${rule_id}" >> "$GITHUB_OUTPUT"
+
+      - name: Run summary
+        env:
+          FINGERPRINT: ${{ steps.mint.outputs.fingerprint }}
+          ROUTING_RULE_ID: ${{ steps.routing.outputs.rule_id }}
+          WORKER_URL: ${{ steps.wrangler.outputs.deployment-url }}
+        run: |
+          set -euo pipefail
+          {
+            echo "### Email-intake deploy"
+            echo ""
+            echo "- Worker: \`gso-email-intake\`"
+            echo "- Worker URL: ${WORKER_URL:-(none — inbound email trigger only, workers_dev disabled)}"
+            echo "- Bearer fingerprint: \`${FINGERPRINT}\`"
+            echo "- Email Routing rule id: \`${ROUTING_RULE_ID}\`"
+            echo ""
+            echo "Raw token + hash are masked in the run log. Hash lives on Vercel, raw token on Cloudflare; neither is stored in this run."
+          } >> "$GITHUB_STEP_SUMMARY"
