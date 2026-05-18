@@ -1,0 +1,22 @@
+name = "gso-email-intake"
+main = "src/index.ts"
+compatibility_date = "2026-05-01"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = false
+
+[vars]
+# GSO_INTAKE_URL is the absolute /api/intake/email endpoint on the deployed
+# Next.js app. Override per environment via `wrangler deploy --var`.
+GSO_INTAKE_URL = "https://gso.damgsolutions.com/api/intake/email"
+
+# Secret: EMAIL_INTAKE_TOKEN — set with `wrangler secret put EMAIL_INTAKE_TOKEN`.
+# Must hash (sha256, hex) to the value in EMAIL_INTAKE_BEARER_HASH on the
+# Next.js side. The worker only ever holds the raw token; the API only ever
+# sees the hash.
+
+# Bind the email() event handler. Configure the inbound route to
+# intake@damgsolutions.com in the Cloudflare Email Routing dashboard and point
+# it at this worker.
+[[routes]]
+pattern = "intake@damgsolutions.com"
+custom_domain = false
