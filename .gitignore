@@ -13,6 +13,9 @@ dist
 coverage
 .nyc_output
 
+# local screenshot output (see scripts/screenshot-canvas.mjs)
+screenshots
+
 # environment
 .env
 .env.local
