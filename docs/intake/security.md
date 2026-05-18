@@ -89,7 +89,7 @@ This document is the **merge gate** for L1.2 per the CEO ask. The CTO [@CTO](/GS
 
 - **Allowed entry MIME types**: `application/json`, `multipart/form-data`, `text/plain`. All others → 415.
 - **Attachment MIME deny-list**: executables (PE/ELF/Mach-O), shell scripts, Java archives, installer images, ISO/IMG. See `DENIED_MIME_TYPES` in `lib/intake/security.ts`.
-- **Attachment extension deny-list**: any of `.exe .dll .so .dylib .bat .cmd .com .msi .scr .ps1 .ps?m1 .sh .bash .zsh .fish .app .jar .war .pkg .deb .rpm .iso .img .vbs .vbe .js .mjs .cjs .wsf .wsh .hta .lnk`. The extension check runs independently of the MIME type — so a `.sh` file uploaded as `application/octet-stream` is still rejected.
+- **Attachment extension deny-list**: any of `.exe .dll .so .dylib .bat .cmd .com .msi .scr .ps1 .psm1 .sh .bash .zsh .fish .app .jar .war .pkg .deb .rpm .iso .img .vbs .vbe .js .mjs .cjs .wsf .wsh .hta .lnk`. The extension check runs independently of the MIME type — so a `.sh` file uploaded as `application/octet-stream` is still rejected.
 
 ### Denial behavior
 
