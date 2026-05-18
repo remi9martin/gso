@@ -60,9 +60,9 @@ describe('rules-engine labeled set (25 examples, ≥20 required)', () => {
       actual: r.actual,
       input: r.input
     }));
-     
+
     console.log(`\nrouting test-set: ${passed}/${rows.length} passed`);
-     
+
     console.table(table);
 
     expect(passed).toBeGreaterThanOrEqual(PASS_THRESHOLD);
