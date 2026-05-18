@@ -138,6 +138,9 @@ export async function processIntake(
     {}
   );
 
+  // userId intentionally omitted from log meta — durable copy lives on
+  // intake_payloads.source_meta. CodeQL js/clear-text-logging flags it as
+  // potentially sensitive flow even though our userIds are env-derived UUIDs.
   log.info('[intake] draft processed', {
     rawPayloadId,
     draftIssueId: issue.id,
@@ -145,7 +148,6 @@ export async function processIntake(
     payloadCreated: upsert.created,
     draftCreated: issue.created,
     kind: input.source.kind,
-    userId: input.source.userId,
     servedBy: draft.servedBy,
     bodyShape: describePayloadForLog(canonicalBody),
     attachments: input.attachments.length
@@ -268,10 +270,10 @@ function consoleLogger(): { info: (msg: string, meta: Record<string, unknown>) =
   return {
     info(msg, meta) {
       try {
-        // eslint-disable-next-line no-console
+         
         console.log(msg, JSON.stringify(meta));
       } catch {
-        // eslint-disable-next-line no-console
+         
         console.log(msg);
       }
     }

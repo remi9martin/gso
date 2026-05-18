@@ -164,14 +164,14 @@ differs.
 
 ## Failure modes
 
-| Code | Where | Meaning                                           | Worker behaviour            |
-| ---- | ----- | ------------------------------------------------- | --------------------------- |
-| 401  | API   | Worker token mismatch                             | `setReject` — message drops |
-| 415  | API   | Non-JSON body or denied attachment MIME           | log + drop                  |
-| 413  | API   | Body or attachment over limit                     | log + drop                  |
+| Code | Where | Meaning                                                 | Worker behaviour            |
+| ---- | ----- | ------------------------------------------------------- | --------------------------- |
+| 401  | API   | Worker token mismatch                                   | `setReject` — message drops |
+| 415  | API   | Non-JSON body or denied attachment MIME                 | log + drop                  |
+| 413  | API   | Body or attachment over limit                           | log + drop                  |
 | 429  | API   | Rate limit exceeded (10/min on the email-worker bucket) | retry per `Retry-After`     |
-| 502  | API   | Paperclip API call to create draft failed         | retry                       |
-| 550  | API   | SPF/DKIM/DMARC failed at the API gate             | `setReject` — message drops |
+| 502  | API   | Paperclip API call to create draft failed               | retry                       |
+| 550  | API   | SPF/DKIM/DMARC failed at the API gate                   | `setReject` — message drops |
 
 Worker-side rejection uses `message.setReject(reason)` which tells the
 Cloudflare MTA to bounce. API-side `5xx` responses cause the Worker to

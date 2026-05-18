@@ -55,16 +55,22 @@ async function main(): Promise<void> {
   };
   await store.insert(record);
 
-  // eslint-disable-next-line no-console
-  console.log(JSON.stringify({
-    note: 'Save the rawToken in 1Password — it will NOT be shown again.',
-    rawToken,
-    record: { ...record, tokenHash: '<redacted>' }
-  }, null, 2));
+   
+  console.log(
+    JSON.stringify(
+      {
+        note: 'Save the rawToken in 1Password — it will NOT be shown again.',
+        rawToken,
+        record: { ...record, tokenHash: '<redacted>' }
+      },
+      null,
+      2
+    )
+  );
 }
 
 main().catch((err) => {
-  // eslint-disable-next-line no-console
+   
   console.error(err);
   process.exit(1);
 });

@@ -42,9 +42,7 @@ export default {
     // Hard reject SPF/DKIM/DMARC failures at the worker. The API layer also
     // checks — defense in depth, per the L1.2 threat model §3.
     if (auth.spf === 'fail' || auth.dkim === 'fail' || auth.dmarc === 'fail') {
-      message.setReject(
-        `Rejected: SPF=${auth.spf} DKIM=${auth.dkim} DMARC=${auth.dmarc}.`
-      );
+      message.setReject(`Rejected: SPF=${auth.spf} DKIM=${auth.dkim} DMARC=${auth.dmarc}.`);
       return;
     }
 
