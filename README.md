@@ -108,6 +108,23 @@ cd "$(./scripts/heartbeat-worktree.sh "$PAPERCLIP_TASK_ID")"
 
 Both helpers are idempotent. Full runbook: [`docs/runbook-workspace.md`](docs/runbook-workspace.md).
 
+### Burn-snapshot storage (production swap)
+
+Default storage for [budget burn snapshots](./lib/canvas/burn-snapshot/types.ts) is in-process memory, which loses data on every cold start. For production, swap to Postgres:
+
+1. Provision a Vercel Postgres database (Neon under the hood) and let Vercel inject `POSTGRES_URL`/`POSTGRES_URL_NON_POOLING` into the project.
+2. Apply the migration once against the production database:
+
+   ```bash
+   psql "$POSTGRES_URL_NON_POOLING" -f migrations/0001_budget_burn_snapshot.sql
+   ```
+
+   The migration is idempotent (`CREATE TABLE IF NOT EXISTS`), so re-running is safe.
+
+3. Set `BURN_SNAPSHOT_STORE=postgres` in the Vercel project's environment and redeploy.
+
+Rollback: set `BURN_SNAPSHOT_STORE=memory` (or unset) and redeploy. The Postgres table is left in place; no data is destroyed.
+
 ## Pre-commit
 
 `npm install` runs `husky` which installs the `.husky/pre-commit` hook. The hook runs `lint-staged`, which Prettier-formats and ESLint-fixes staged files.
