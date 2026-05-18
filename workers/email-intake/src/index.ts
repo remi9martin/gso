@@ -69,11 +69,12 @@ export default {
       html: parsed.html ?? '',
       auth,
       attachments: (parsed.attachments ?? [])
-        .filter((a) => a.content && a.content.byteLength > 0)
-        .map((a) => ({
+        .map((a) => ({ a, bytes: attachmentBytes(a.content) }))
+        .filter(({ bytes }) => bytes.byteLength > 0)
+        .map(({ a, bytes }) => ({
           filename: a.filename ?? 'attachment',
           mimeType: a.mimeType ?? 'application/octet-stream',
-          contentBase64: arrayBufferToBase64(a.content as ArrayBuffer)
+          contentBase64: uint8ArrayToBase64(bytes)
         }))
     };
 
@@ -165,8 +166,17 @@ async function streamToUint8Array(stream: ReadableStream<Uint8Array>): Promise<U
   return out;
 }
 
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
+function attachmentBytes(content: ArrayBuffer | Uint8Array | string): Uint8Array {
+  if (typeof content === 'string') {
+    return new TextEncoder().encode(content);
+  }
+  if (content instanceof Uint8Array) {
+    return content;
+  }
+  return new Uint8Array(content);
+}
+
+function uint8ArrayToBase64(bytes: Uint8Array): string {
   let binary = '';
   for (let i = 0; i < bytes.length; i++) {
     binary += String.fromCharCode(bytes[i]);

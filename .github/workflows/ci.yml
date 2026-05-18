@@ -48,3 +48,11 @@ jobs:
         run: npm run build
         env:
           GIT_COMMIT_SHA: ${{ github.sha }}
+
+      - name: Email-intake worker — install
+        working-directory: workers/email-intake
+        run: npm ci --no-audit --no-fund
+
+      - name: Email-intake worker — typecheck
+        working-directory: workers/email-intake
+        run: npm run typecheck
