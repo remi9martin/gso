@@ -80,3 +80,21 @@ export function getIntakeRateLimiter(): SlidingWindowRateLimiter {
 export function __setIntakeRateLimiter(limiter: SlidingWindowRateLimiter | null): void {
   cached = limiter;
 }
+
+// Separate singleton for the /api/intake/email route. The email worker is
+// single-tenant (one bearer token) so per-key segmentation isn't useful — we
+// run the whole route on one bucket. Keeping this separate from the bearer
+// limiter means a flooded email worker can't lock out legitimate /api/intake
+// traffic and vice-versa.
+export const EMAIL_INTAKE_BUCKET_KEY = 'email-worker';
+
+let emailCached: SlidingWindowRateLimiter | null = null;
+
+export function getEmailIntakeRateLimiter(): SlidingWindowRateLimiter {
+  if (!emailCached) emailCached = new SlidingWindowRateLimiter();
+  return emailCached;
+}
+
+export function __setEmailIntakeRateLimiter(limiter: SlidingWindowRateLimiter | null): void {
+  emailCached = limiter;
+}

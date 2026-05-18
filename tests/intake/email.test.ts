@@ -8,6 +8,7 @@ import {
   type EmailIntakeEnvelope
 } from '@/lib/intake/email-handler';
 import { MemoryIntakePayloadStore } from '@/lib/intake/payload-store';
+import { SlidingWindowRateLimiter } from '@/lib/intake/rate-limit';
 import type { CreatedDraftIssue } from '@/lib/intake/create-draft-issue';
 import type { Draft, Normalizer } from '@/lib/intake/normalizer/types';
 
@@ -23,6 +24,7 @@ const BEARER_HASH = createHash('sha256').update(RAW_TOKEN).digest('hex');
 
 interface Harness {
   payloadStore: MemoryIntakePayloadStore;
+  rateLimiter: SlidingWindowRateLimiter;
   draftCalls: Array<{ rawPayloadId: string; title: string; description: string }>;
   call: (envelope: Partial<EmailIntakeEnvelope>, opts?: { token?: string }) => Promise<Response>;
 }
@@ -44,8 +46,15 @@ function fixedDraft(title: string, tag: Draft['suggestedTag']): Normalizer {
   };
 }
 
-function buildHarness(opts?: { normalizer?: Normalizer | null }): Harness {
+function buildHarness(opts?: {
+  normalizer?: Normalizer | null;
+  rateLimiter?: SlidingWindowRateLimiter;
+}): Harness {
   const payloadStore = new MemoryIntakePayloadStore();
+  // Fresh limiter per harness so per-test buckets stay isolated. Production
+  // singleton has DEFAULT_INTAKE_RATE_LIMIT; tests get the same defaults
+  // unless they override (see rate-limit suite).
+  const rateLimiter = opts?.rateLimiter ?? new SlidingWindowRateLimiter();
   const draftCalls: Harness['draftCalls'] = [];
   const seen = new Map<string, CreatedDraftIssue>();
   let counter = 500;
@@ -98,12 +107,13 @@ function buildHarness(opts?: { normalizer?: Normalizer | null }): Harness {
       bearerHash: BEARER_HASH,
       config: { projectId: PROJECT_ID, assigneeUserId: VALID_USER_ID, uiUserId: VALID_USER_ID },
       normalizer,
+      rateLimiter,
       createDraftFn: stubCreateDraft,
       logger: { info: () => undefined }
     });
   };
 
-  return { payloadStore, draftCalls, call };
+  return { payloadStore, rateLimiter, draftCalls, call };
 }
 
 describe('POST /api/intake/email — auth', () => {
@@ -370,6 +380,44 @@ describe('POST /api/intake/email — normalizer fallback', () => {
   });
 });
 
+describe('POST /api/intake/email — rate limiting', () => {
+  it('returns 429 with Retry-After once the bucket is exhausted', async () => {
+    // 2/min so we don't need 10 envelope round-trips per test.
+    const limiter = new SlidingWindowRateLimiter({ windowMs: 60_000, maxRequests: 2 });
+    const h = buildHarness({ rateLimiter: limiter });
+
+    const first = await h.call({ messageId: '<rl-1@x.com>', text: 'first' });
+    const second = await h.call({ messageId: '<rl-2@x.com>', text: 'second' });
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(201);
+
+    const blocked = await h.call({ messageId: '<rl-3@x.com>', text: 'third' });
+    expect(blocked.status).toBe(429);
+    const body = await blocked.json();
+    expect(body.error).toBe('rate_limited');
+    expect(blocked.headers.get('Retry-After')).toMatch(/^\d+$/);
+    expect(Number(blocked.headers.get('Retry-After'))).toBeGreaterThan(0);
+    expect(blocked.headers.get('X-RateLimit-Remaining')).toBe('0');
+    expect(blocked.headers.get('X-RateLimit-Limit')).toMatch(/^\d+$/);
+    expect(blocked.headers.get('X-RateLimit-Reset')).toMatch(/^\d+$/);
+  });
+
+  it('rate-limits a flood of wrong-token requests too (limiter runs before auth)', async () => {
+    // The single static "email-worker" bucket catches both authenticated
+    // floods (leaked token) and unauth probing. We don't want an attacker to
+    // burn unbounded payload-store work just because they have a token, nor
+    // do we want bearer-brute-force to skip the cap.
+    const limiter = new SlidingWindowRateLimiter({ windowMs: 60_000, maxRequests: 1 });
+    const h = buildHarness({ rateLimiter: limiter });
+
+    const wrong = await h.call({ messageId: '<rl-bad-1@x.com>' }, { token: 'not-the-secret' });
+    expect(wrong.status).toBe(401); // first request: limiter passes, auth fails
+
+    const blocked = await h.call({ messageId: '<rl-bad-2@x.com>' }, { token: 'not-the-secret' });
+    expect(blocked.status).toBe(429); // second request: limiter trips
+  });
+});
+
 describe('parseAddress', () => {
   it('parses Display Name <addr@domain>', () => {
     expect(parseAddress('Remi <remi@digitaltrvst.com>')).toEqual({
@@ -399,14 +447,5 @@ describe('parseAddress', () => {
 async function listAllPayloads(
   store: MemoryIntakePayloadStore
 ): Promise<Array<{ id: string; sourceMeta: Record<string, unknown> }>> {
-  // MemoryIntakePayloadStore doesn't expose a list method; reach into its
-  // private byId map via a serialization round-trip on findByHash.
-  const ids: Array<{ id: string; sourceMeta: Record<string, unknown> }> = [];
-  // @ts-expect-error — accessing private map for test introspection
-  for (const record of (
-    store.byId as Map<string, { id: string; sourceMeta: Record<string, unknown> }>
-  ).values()) {
-    ids.push({ id: record.id, sourceMeta: record.sourceMeta });
-  }
-  return ids;
+  return store.entriesForTest().map((r) => ({ id: r.id, sourceMeta: r.sourceMeta }));
 }

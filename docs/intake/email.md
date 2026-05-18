@@ -70,10 +70,17 @@ EMAIL_INTAKE_BEARER_HASH = sha256(EMAIL_INTAKE_TOKEN)
 GSO_INTAKE_EMAIL_USER_ID = <user id for email-sourced drafts; optional>
 ```
 
-Generate the hash locally:
+Mint a fresh token + matching hash (prints both as JSON; save the raw token in
+1Password + Cloudflare, the hash in Vercel):
 
 ```
-node -e "console.log(require('crypto').createHash('sha256').update(process.argv[1]).digest('hex'))" <RAW_TOKEN>
+node scripts/intake/mint-email-token.ts
+```
+
+To re-derive the hash from an already-issued token (rotation sanity check):
+
+```
+node -e "const t=process.argv[1]; console.log(require('crypto').createHash('sha256').update(t).digest('hex'))" -- "$RAW_TOKEN"
 ```
 
 Rotation: regenerate the token, update both Cloudflare secret and Vercel env,
@@ -162,7 +169,7 @@ differs.
 | 401  | API   | Worker token mismatch                             | `setReject` — message drops |
 | 415  | API   | Non-JSON body or denied attachment MIME           | log + drop                  |
 | 413  | API   | Body or attachment over limit                     | log + drop                  |
-| 429  | API   | (Not implemented; reserved for future rate limit) | retry                       |
+| 429  | API   | Rate limit exceeded (10/min on the email-worker bucket) | retry per `Retry-After`     |
 | 502  | API   | Paperclip API call to create draft failed         | retry                       |
 | 550  | API   | SPF/DKIM/DMARC failed at the API gate             | `setReject` — message drops |
 

@@ -42,6 +42,7 @@ This document is the **merge gate** for L1.2 per the CEO ask. The CTO [@CTO](/GS
 
 - **10 requests / minute / user** on `/api/intake`, sliding window.
 - **10 requests / minute / UI session** for `submitIntakeUi`, keyed on the configured `uiUserId`.
+- **10 requests / minute / route** on `/api/intake/email`, sliding window on a single static `email-worker` bucket (the worker is single-tenant; per-token segmentation would be cosmetic). The limiter runs **before** bearer auth so brute-force probing and an authenticated flood from a leaked token both fall on the same cap. The bucket is a separate singleton from `/api/intake`, so an email flood cannot lock out bearer-token traffic and vice-versa.
 - Configured in `lib/intake/rate-limit.ts` (`DEFAULT_INTAKE_RATE_LIMIT`).
 
 ### Behavior when triggered
@@ -64,10 +65,11 @@ This document is the **merge gate** for L1.2 per the CEO ask. The CTO [@CTO](/GS
 
 ## 3. Email forgery (downstream of L1.4)
 
-`/api/intake` is the shared sink for the email-to-issue receiver ([GSO-126](/GSO/issues/GSO-126)). Forgery is handled **upstream** of this endpoint:
+`/api/intake` is the shared sink for the email-to-issue receiver ([GSO-126](/GSO/issues/GSO-126)). Forgery is checked **upstream** of this endpoint and re-checked at the webhook:
 
-- The Cloudflare Email Worker (per the GSO-116 architecture) enforces **SPF, DKIM, and DMARC** on inbound mail before it forwards to `/api/intake`. The Worker carries a Paperclip-scoped intake token bound to the receiver's identity; that token is rate-limited like any other.
-- A failing SPF/DKIM/DMARC check causes the Worker to **drop** the mail — we do **not** receive an intake call for forged mail.
+- The Cloudflare Email Worker (per the GSO-116 architecture) evaluates **SPF, DKIM, and DMARC** on inbound mail and forwards the result to `/api/intake/email`. The Worker carries a Paperclip-scoped intake token bound to the receiver's identity; that token is rate-limited like any other.
+- **Policy** (enforced in `lib/intake/email-handler.ts`): explicit SPF/DKIM/DMARC `fail` results are **rejected with 5xx**, which causes the originating MTA to give up cleanly (and re-gates a worker bypass). `pass` and `none` are accepted. `neutral`, `softfail`, and `temperror` are **accepted with the auth verdict preserved in `source_meta.hints.authResults`** so the normalizer (and any later audit) can see the soft signal rather than have it silently discarded.
+- This is intentionally permissive for soft-fails because most forwarded mail (Gmail → external, "forward as attachment", auto-forwarders) breaks SPF alignment in ways that don't represent real forgery — a hard policy would reject Remi's own forwards. Soft-fails escalate when the normalizer assigns low confidence; explicit `fail` never reaches the normalizer.
 
 ### Trust boundary acknowledged here
 

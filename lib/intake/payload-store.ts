@@ -64,4 +64,11 @@ export class MemoryIntakePayloadStore implements IntakePayloadStore {
     const row = this.byId.get(id);
     return row ? { ...row } : null;
   }
+
+  // Test-only: enumerate every persisted record. Lives on the in-memory store
+  // because the durable adapter (lib/canvas/.../postgres-store-style) will get
+  // a proper SQL listing endpoint; tests should not poke at the private map.
+  entriesForTest(): IntakePayloadRecord[] {
+    return Array.from(this.byId.values()).map((row) => ({ ...row }));
+  }
 }

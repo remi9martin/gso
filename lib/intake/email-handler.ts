@@ -6,6 +6,12 @@ import { readIntakeConfig, IntakeConfigError } from './config';
 import { processIntake, type IntakeAttachmentRef } from './intake-service';
 import type { Normalizer } from './normalizer/types';
 import type { IntakePayloadStore } from './payload-store';
+import {
+  DEFAULT_INTAKE_RATE_LIMIT,
+  EMAIL_INTAKE_BUCKET_KEY,
+  getEmailIntakeRateLimiter,
+  type SlidingWindowRateLimiter
+} from './rate-limit';
 import { checkAttachment, MAX_ATTACHMENT_BYTES, MAX_ATTACHMENTS } from './security';
 
 // /api/intake/email — Cloudflare Email Worker → Paperclip Draft pipeline.
@@ -63,6 +69,7 @@ export interface EmailIntakeHandlerDeps {
   config?: ReturnType<typeof readIntakeConfig>;
   /** Sha256 hex of the bearer token shared with the worker. */
   bearerHash?: string;
+  rateLimiter?: SlidingWindowRateLimiter;
   createDraftFn?: Parameters<typeof processIntake>[1]['createDraftFn'];
   logger?: Parameters<typeof processIntake>[1]['logger'];
 }
@@ -77,6 +84,29 @@ export async function handleEmailIntake(
       error: 'email_intake_not_configured',
       message: 'EMAIL_INTAKE_BEARER_HASH is not set. See .env.example.'
     });
+  }
+
+  // Rate-limit before bearer auth: the single worker token is the only
+  // legitimate caller, so a per-key segmentation would be cosmetic. Capping at
+  // the route entrance means brute-force/token-leak floods both fall on the
+  // same bucket and can't burn payload-store cycles past the limit.
+  const limiter = deps.rateLimiter ?? getEmailIntakeRateLimiter();
+  const limit = limiter.consume(EMAIL_INTAKE_BUCKET_KEY);
+  if (!limit.allowed) {
+    const retryAfterSeconds = Math.max(1, Math.ceil(limit.retryAfterMs / 1000));
+    return jsonResponse(
+      429,
+      {
+        error: 'rate_limited',
+        message: `Email intake rate limit exceeded; retry after ${retryAfterSeconds}s.`
+      },
+      {
+        'Retry-After': String(retryAfterSeconds),
+        'X-RateLimit-Limit': String(DEFAULT_INTAKE_RATE_LIMIT.maxRequests),
+        'X-RateLimit-Remaining': '0',
+        'X-RateLimit-Reset': String(Math.floor(limit.resetAtMs / 1000))
+      }
+    );
   }
 
   const auth = authenticateBearer(request.headers, bearerHash);
@@ -413,9 +443,13 @@ function base64DecodedLength(b64: string): number {
   return Math.floor((padded.length * 3) / 4) - pad;
 }
 
-function jsonResponse(status: number, body: Record<string, unknown>): Response {
+function jsonResponse(
+  status: number,
+  body: Record<string, unknown>,
+  extraHeaders?: Record<string, string>
+): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'content-type': 'application/json; charset=utf-8' }
+    headers: { 'content-type': 'application/json; charset=utf-8', ...extraHeaders }
   });
 }

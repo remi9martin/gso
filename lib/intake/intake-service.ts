@@ -88,14 +88,16 @@ export async function processIntake(
   );
   const payloadId = randomUUID();
   const capturedAt = input.source.capturedAt ?? new Date();
+  const sourceMeta = buildSourceMeta(input.source, input.attachments, input.hints);
+  const attachmentRefs = input.attachments.map((a) => a.storageKey);
 
   const upsert = await deps.payloadStore.upsert({
     id: payloadId,
     kind: input.source.kind,
     payloadHash,
     body: canonicalBody,
-    attachmentRefs: input.attachments.map((a) => a.storageKey),
-    sourceMeta: buildSourceMeta(input.source, input.attachments, input.hints),
+    attachmentRefs,
+    sourceMeta,
     capturedAt
   });
 
@@ -106,8 +108,8 @@ export async function processIntake(
       id: rawPayloadId,
       kind: input.source.kind,
       body: canonicalBody,
-      sourceMeta: buildSourceMeta(input.source, input.attachments, input.hints),
-      attachmentRefs: input.attachments.map((a) => a.storageKey),
+      sourceMeta,
+      attachmentRefs,
       capturedAt: capturedAt.toISOString()
     },
     deps.normalizer,
