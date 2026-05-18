@@ -2,6 +2,7 @@
 
 import type { CanvasLayout, CanvasLayoutNode } from '@/lib/canvas/layout';
 import type { AgentStatusFlag, CanvasNode } from '@/lib/canvas/types';
+import { isOverloaded, pickCardTone } from '@/lib/canvas/filter';
 
 import styles from './canvas.module.css';
 
@@ -61,13 +62,28 @@ export function CanvasGraph({ layout }: { layout: CanvasLayout }) {
 
 function AgentNode({ laidOut }: { laidOut: CanvasLayoutNode }) {
   const { node, x, y } = laidOut;
-  const statusTone = pickStatusTone(node);
+  const tone = pickCardTone(node);
+  const overloaded = isOverloaded(node);
+  const isRunning = node.org.runtimeStatus === 'running';
+  const cardClass = [
+    styles.card,
+    styles[`card_${tone}`],
+    overloaded ? styles.card_overloaded : null
+  ]
+    .filter(Boolean)
+    .join(' ');
   return (
     <foreignObject x={x} y={y} width={NODE_WIDTH} height={NODE_HEIGHT}>
       <div
-        className={`${styles.card} ${styles[`card_${statusTone}`]}`}
+        className={cardClass}
         data-testid={`agent-card-${node.org.urlKey}`}
+        data-overloaded={overloaded ? 'true' : undefined}
+        data-tone={tone}
+        tabIndex={0}
+        role="button"
+        aria-label={`${node.org.displayName} (${node.org.roleKey})`}
       >
+        {isRunning ? <span className={styles.cardRunningStripe} aria-hidden /> : null}
         <div className={styles.cardHeader}>
           <span className={styles.cardName}>{node.org.displayName}</span>
           <span className={styles.cardRole}>{node.org.roleKey}</span>
@@ -81,16 +97,14 @@ function AgentNode({ laidOut }: { laidOut: CanvasLayoutNode }) {
 }
 
 function FlagRow({ flags }: { flags: AgentStatusFlag[] }) {
-  if (!flags.length) {
-    return (
-      <div className={styles.flagRow}>
-        <span className={`${styles.flag} ${styles.flag_info}`}>unknown</span>
-      </div>
-    );
-  }
+  // Hide the no-op `running` / `idle` informational flags now that the card
+  // surfaces runtime state via the left stripe + role. Keep exception flags
+  // so overload/paused/budget warnings still pop on the card.
+  const visible = flags.filter((f) => f.key !== 'running' && f.key !== 'idle');
+  if (!visible.length) return null;
   return (
     <div className={styles.flagRow}>
-      {flags.map((flag) => (
+      {visible.map((flag) => (
         <span
           key={flag.key}
           className={`${styles.flag} ${styles[`flag_${flag.severity}`]}`}
@@ -135,7 +149,7 @@ function BudgetRow({ node }: { node: CanvasNode }) {
           {(pct * 100).toFixed(0)}%
         </span>
       </div>
-      <div className={styles.budgetTrack}>
+      <div className={styles.budgetTrack} data-empty={pct === 0 ? 'true' : undefined} aria-hidden>
         <div
           className={`${styles.budgetFill} ${styles[`fill_${tone}`]}`}
           style={{ width: `${widthPct}%` }}
@@ -143,14 +157,6 @@ function BudgetRow({ node }: { node: CanvasNode }) {
       </div>
     </div>
   );
-}
-
-function pickStatusTone(node: CanvasNode): 'running' | 'idle' | 'paused' | 'error' | 'unknown' {
-  if (node.org.runtimeStatus === 'error') return 'error';
-  if (node.org.runtimeStatus === 'paused' || node.org.pausedAt) return 'paused';
-  if (node.org.runtimeStatus === 'running') return 'running';
-  if (node.org.runtimeStatus === 'idle') return 'idle';
-  return 'unknown';
 }
 
 function formatUSD(cents: number): string {

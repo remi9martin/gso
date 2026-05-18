@@ -1,6 +1,5 @@
 import { loadCanvas } from '@/lib/canvas/loader';
 import { layoutCanvas } from '@/lib/canvas/layout';
-import { PaperclipEnvError } from '@/lib/paperclip/env';
 import { PaperclipApiError } from '@/lib/paperclip/client';
 
 import { CanvasClient } from './canvas-client';
@@ -10,25 +9,19 @@ export const dynamic = 'force-dynamic';
 
 export default async function CanvasPage() {
   try {
-    const { bundle, source } = await loadCanvas();
+    const { bundle, source, mode, missingEnv } = await loadCanvas();
     const layout = layoutCanvas(bundle.nodes);
     return (
       <CanvasClient
         initialBundle={bundle}
         initialLayout={layout}
         initialSource={source}
+        initialMode={mode}
+        initialMissingEnv={missingEnv}
         pollIntervalMs={20_000}
       />
     );
   } catch (err) {
-    if (err instanceof PaperclipEnvError) {
-      return (
-        <CanvasErrorState
-          headline="Canvas needs Paperclip credentials"
-          body={`Set the missing env vars and reload: ${err.missing.join(', ')}.`}
-        />
-      );
-    }
     if (err instanceof PaperclipApiError) {
       return (
         <CanvasErrorState
