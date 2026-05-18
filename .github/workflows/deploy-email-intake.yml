@@ -1,0 +1,187 @@
+# Deploy the email-intake stack — mints a fresh bearer pair, syncs the hash
+# half to Vercel (production), and ships the raw half into the Cloudflare
+# Email Worker. Also keeps the Cloudflare Email Routing rule pointing at the
+# `gso-email-intake` worker.
+#
+# Trigger:        workflow_dispatch (Path A — agent-runnable from `gh workflow run`).
+# Required repo secrets:
+#   - CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_ZONE_ID
+#   - VERCEL_TOKEN, VERCEL_PROJECT_ID, VERCEL_ORG_ID
+#
+# Idempotency: re-running rotates the bearer pair, upserts the Vercel env,
+# redeploys the worker, and ensures the Email Routing rule is enabled and
+# targets the worker. There is a brief (~10–60s) rotation window between the
+# worker deploy and Vercel production deploy where the worker's new bearer
+# fails API auth; sending MTAs will retry with MTA semantics (the worker
+# throws on 5xx but rejects on 401, so 401s during the window bounce — accept
+# this tradeoff or run during a low-traffic minute).
+
+name: Deploy email-intake
+
+on:
+  workflow_dispatch:
+    inputs:
+      sync-intake-config:
+        description: 'Also sync GSO_INTAKE_PROJECT_ID + GSO_INTAKE_ASSIGNEE_USER_ID to Vercel (first-time setup or when those IDs change)'
+        required: false
+        default: false
+        type: boolean
+      gso-intake-project-id:
+        description: 'Paperclip project id for new Draft issues (required when sync-intake-config=true)'
+        required: false
+        type: string
+      gso-intake-assignee-user-id:
+        description: 'Paperclip user id assigned to new Draft issues (required when sync-intake-config=true)'
+        required: false
+        type: string
+
+concurrency:
+  group: deploy-email-intake
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Mint, sync, deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+      WORKER_NAME: gso-email-intake
+      INTAKE_ADDRESS: intake@damgsolutions.com
+
+    steps:
+      - name: Validate required secrets
+        run: |
+          missing=()
+          for name in VERCEL_TOKEN VERCEL_ORG_ID VERCEL_PROJECT_ID CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID CLOUDFLARE_ZONE_ID; do
+            if [ -z "${!name}" ]; then missing+=("$name"); fi
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Missing repo secrets: ${missing[*]}"
+            exit 1
+          fi
+
+      - name: Validate sync-intake-config inputs
+        if: ${{ inputs.sync-intake-config }}
+        env:
+          IN_PROJECT_ID: ${{ inputs.gso-intake-project-id }}
+          IN_ASSIGNEE: ${{ inputs.gso-intake-assignee-user-id }}
+        run: |
+          missing=()
+          if [ -z "$IN_PROJECT_ID" ]; then missing+=("gso-intake-project-id"); fi
+          if [ -z "$IN_ASSIGNEE" ]; then missing+=("gso-intake-assignee-user-id"); fi
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::sync-intake-config=true but missing inputs: ${missing[*]}"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+
+      - name: Mint bearer pair
+        id: mint
+        run: |
+          out=$(node --experimental-strip-types scripts/intake/mint-email-token.ts)
+          raw=$(printf '%s' "$out" | jq -r '.rawToken')
+          hash=$(printf '%s' "$out" | jq -r '.tokenHash')
+          fingerprint="${hash:0:8}"
+          # Mask both halves so they cannot leak via logs or step outputs.
+          echo "::add-mask::$raw"
+          echo "::add-mask::$hash"
+          {
+            echo "raw-token<<__EOF__"
+            echo "$raw"
+            echo "__EOF__"
+            echo "token-hash<<__EOF__"
+            echo "$hash"
+            echo "__EOF__"
+            echo "fingerprint=$fingerprint"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Upsert EMAIL_INTAKE_BEARER_HASH on Vercel (production)
+        env:
+          BEARER_HASH: ${{ steps.mint.outputs.token-hash }}
+        run: |
+          set -euo pipefail
+          ./.github/scripts/vercel-env-upsert.sh EMAIL_INTAKE_BEARER_HASH "$BEARER_HASH" encrypted production
+
+      - name: Upsert GSO_INTAKE_PROJECT_ID on Vercel (production)
+        if: ${{ inputs.sync-intake-config }}
+        env:
+          VALUE: ${{ inputs.gso-intake-project-id }}
+        run: |
+          set -euo pipefail
+          ./.github/scripts/vercel-env-upsert.sh GSO_INTAKE_PROJECT_ID "$VALUE" plain production
+
+      - name: Upsert GSO_INTAKE_ASSIGNEE_USER_ID on Vercel (production)
+        if: ${{ inputs.sync-intake-config }}
+        env:
+          VALUE: ${{ inputs.gso-intake-assignee-user-id }}
+        run: |
+          set -euo pipefail
+          ./.github/scripts/vercel-env-upsert.sh GSO_INTAKE_ASSIGNEE_USER_ID "$VALUE" plain production
+
+      - name: Trigger Vercel production deployment
+        id: vercel-deploy
+        run: |
+          set -euo pipefail
+          ./.github/scripts/vercel-deploy.sh
+
+      - name: Install worker dependencies
+        working-directory: workers/email-intake
+        run: npm ci
+
+      - name: Deploy Cloudflare Email Worker
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: workers/email-intake
+          secrets: |
+            EMAIL_INTAKE_TOKEN
+        env:
+          EMAIL_INTAKE_TOKEN: ${{ steps.mint.outputs.raw-token }}
+
+      - name: Upsert Cloudflare Email Routing rule
+        run: |
+          set -euo pipefail
+          ./.github/scripts/cf-email-routing-upsert.sh
+
+      - name: Wait for Vercel deployment
+        if: steps.vercel-deploy.outputs.deployment-id != ''
+        env:
+          DEPLOYMENT_ID: ${{ steps.vercel-deploy.outputs.deployment-id }}
+        run: |
+          set -euo pipefail
+          ./.github/scripts/vercel-wait.sh "$DEPLOYMENT_ID"
+
+      - name: Run summary
+        env:
+          FINGERPRINT: ${{ steps.mint.outputs.fingerprint }}
+          VERCEL_DEPLOY_URL: ${{ steps.vercel-deploy.outputs.deployment-url }}
+        run: |
+          {
+            echo "### Email intake deployed"
+            echo ""
+            echo "- Worker: \`$WORKER_NAME\`"
+            echo "- Route: \`$INTAKE_ADDRESS\` → worker (Cloudflare Email Routing)"
+            echo "- Bearer hash fingerprint (first 8 hex of sha256): \`${FINGERPRINT}\`"
+            echo "- Vercel production deployment: ${VERCEL_DEPLOY_URL:-'(not triggered)'}"
+            echo ""
+            echo "Smoke: send a test email to \`$INTAKE_ADDRESS\` and verify a Draft issue appears in the Intake project."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "fingerprint=$FINGERPRINT"
