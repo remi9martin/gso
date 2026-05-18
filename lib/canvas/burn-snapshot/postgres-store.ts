@@ -1,6 +1,6 @@
 import 'server-only';
 
-import { sql as defaultSql } from '@vercel/postgres';
+import { neon } from '@neondatabase/serverless';
 
 import type {
   BurnSnapshot,
@@ -9,9 +9,9 @@ import type {
   PutSnapshotResult
 } from './types';
 
-// Minimal surface of the @vercel/postgres `sql` tagged-template client that
-// this adapter relies on. Typed locally so tests can inject a fake without
-// pulling the full @vercel/postgres types into the test surface.
+// Minimal surface of the Neon serverless tagged-template client that this
+// adapter relies on. Typed locally so tests can inject a fake without
+// pulling the full @neondatabase/serverless types into the test surface.
 export type SqlClient = <Row = unknown>(
   strings: TemplateStringsArray,
   ...values: unknown[]
@@ -25,10 +25,30 @@ interface BurnRow {
   month_budget_cents: number;
 }
 
+// Neon's HTTP driver is stateless per call, so a single shared client is
+// safe across requests. Lazy-init so importing this module doesn't blow up
+// in dev when DATABASE_URL is unset (the memory store is the default).
+let cachedDefaultClient: SqlClient | null = null;
+function defaultClient(): SqlClient {
+  if (cachedDefaultClient) return cachedDefaultClient;
+  const url = process.env.DATABASE_URL;
+  if (!url) {
+    throw new Error(
+      'DATABASE_URL is not set. Configure the Neon integration or set BURN_SNAPSHOT_STORE=memory.'
+    );
+  }
+  cachedDefaultClient = neon(url, { fullResults: true }) as unknown as SqlClient;
+  return cachedDefaultClient;
+}
+
 export class PostgresBurnSnapshotStore implements BurnSnapshotStore {
-  // Pooled client by default — @vercel/postgres manages its own connection
-  // pool, so we hold a single reference instead of opening per request.
-  constructor(private readonly sql: SqlClient = defaultSql as unknown as SqlClient) {}
+  private readonly sql: SqlClient;
+
+  constructor(sql?: SqlClient) {
+    // Resolve the default lazily so tests that inject a fake client never
+    // touch DATABASE_URL.
+    this.sql = sql ?? defaultClient();
+  }
 
   async putSnapshot(snapshot: BurnSnapshot): Promise<PutSnapshotResult> {
     const result = await this.sql`
