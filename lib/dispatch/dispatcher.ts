@@ -3,7 +3,6 @@ import 'server-only';
 import { readPaperclipEnv, type PaperclipEnv } from '../paperclip/env';
 import {
   DispatchBriefError,
-  MIRROR_LINK_PLACEHOLDER,
   fillMirrorLink,
   renderBrief,
   type AncestorLike,
@@ -15,7 +14,7 @@ import {
   DispatchAuthorizationError,
   checkDispatchAuthorization
 } from './authorization';
-import { loadDispatcherKey, redactKey, type OpaqueDispatcherKey } from './secrets';
+import { loadDispatcherKey, redactKey } from './secrets';
 
 export const DISPATCH_METADATA_DOC_KEY = 'dispatch-metadata';
 
