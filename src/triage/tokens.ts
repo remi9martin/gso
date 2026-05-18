@@ -1,4 +1,5 @@
 // Design tokens for the Triage Inbox routing-decision affordance.
+// See docs/design-system/tokens.md for the canonical token contract and rationale.
 //
 // First-version tokens established by [GSO-36](/GSO/issues/GSO-36) UX review.
 // Named so they can swap to a global token system later without renaming.
