@@ -193,19 +193,15 @@ describe('dispatch — happy path', () => {
   beforeEach(() => {
     state = freshState();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    stdoutSpy = (vi.spyOn(process.stdout, 'write') as any).mockImplementation(
-      (chunk: unknown) => {
-        state.stdoutCapture.push(String(chunk));
-        return true;
-      }
-    );
+    stdoutSpy = (vi.spyOn(process.stdout, 'write') as any).mockImplementation((chunk: unknown) => {
+      state.stdoutCapture.push(String(chunk));
+      return true;
+    });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    stderrSpy = (vi.spyOn(process.stderr, 'write') as any).mockImplementation(
-      (chunk: unknown) => {
-        state.stderrCapture.push(String(chunk));
-        return true;
-      }
-    );
+    stderrSpy = (vi.spyOn(process.stderr, 'write') as any).mockImplementation((chunk: unknown) => {
+      state.stderrCapture.push(String(chunk));
+      return true;
+    });
   });
 
   afterEach(() => {

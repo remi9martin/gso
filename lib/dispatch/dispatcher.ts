@@ -98,18 +98,34 @@ export async function dispatch(
 
   try {
     // 2. Fetch source issue + ancestors + project + goal (origin auth).
-    const sourceIssue = await getJson<IssueResponse>(`/api/issues/${sourceIssueId}`, ctx, env.apiKey);
+    const sourceIssue = await getJson<IssueResponse>(
+      `/api/issues/${sourceIssueId}`,
+      ctx,
+      env.apiKey
+    );
     const ancestors = await fetchAncestors(sourceIssue.parentId, ctx, env.apiKey);
     const project = sourceIssue.projectId
-      ? await getJsonOrNull<NamedEntityLike>(`/api/projects/${sourceIssue.projectId}`, ctx, env.apiKey)
+      ? await getJsonOrNull<NamedEntityLike>(
+          `/api/projects/${sourceIssue.projectId}`,
+          ctx,
+          env.apiKey
+        )
       : null;
     const goal = sourceIssue.goalId
       ? await getJsonOrNull<NamedEntityLike>(`/api/goals/${sourceIssue.goalId}`, ctx, env.apiKey)
       : null;
 
     // 3. dispatch_authorized gate — refuse without the marker.
-    const authDoc = await getDocumentOrNull(sourceIssueId, DISPATCH_AUTHORIZED_DOC_KEY, ctx, env.apiKey);
-    checkDispatchAuthorization(sourceIssue.identifier, authDoc ? { body: authDoc.body ?? null } : null);
+    const authDoc = await getDocumentOrNull(
+      sourceIssueId,
+      DISPATCH_AUTHORIZED_DOC_KEY,
+      ctx,
+      env.apiKey
+    );
+    checkDispatchAuthorization(
+      sourceIssue.identifier,
+      authDoc ? { body: authDoc.body ?? null } : null
+    );
 
     // 4. Resolve origin company prefix (for in-brief links).
     const originCompany = await getJsonOrNull<CompanyResponse>(
@@ -196,13 +212,7 @@ export async function dispatch(
 
     // 10. Re-render with the real mirror URL and PATCH the mirror description.
     const finalBody = fillMirrorLink(rendered.body, mirrorLinkMarkdown);
-    await patchIssue(
-      mirror.id,
-      { description: finalBody },
-      ctx,
-      dispatcherKey.reveal(),
-      runId
-    );
+    await patchIssue(mirror.id, { description: finalBody }, ctx, dispatcherKey.reveal(), runId);
 
     // 11. Write dispatch-metadata on the source (origin JWT).
     await putDocument(
@@ -392,7 +402,12 @@ function pickPrefix(company: CompanyResponse | null, identifier: string | null):
   if (company?.prefix) return company.prefix;
   if (company?.identifierPrefix) return company.identifierPrefix;
   if (identifier && identifier.includes('-')) return identifier.split('-')[0];
-  return company?.name?.replace(/[^A-Za-z0-9]+/g, '').toUpperCase().slice(0, 6) || 'CO';
+  return (
+    company?.name
+      ?.replace(/[^A-Za-z0-9]+/g, '')
+      .toUpperCase()
+      .slice(0, 6) || 'CO'
+  );
 }
 
 function pickCeo(company: CompanyResponse | null, agents: AgentResponse[]): AgentResponse | null {

@@ -172,7 +172,9 @@ function originIssueLink(input: DispatchBriefInput): string {
 function ancestorTrail(input: DispatchBriefInput): string {
   if (input.ancestors.length === 0) return '_No parent issues._';
   return input.ancestors
-    .map((a) => `[${a.identifier}](/${input.originCompanyPrefix}/issues/${a.identifier}) — ${a.title}`)
+    .map(
+      (a) => `[${a.identifier}](/${input.originCompanyPrefix}/issues/${a.identifier}) — ${a.title}`
+    )
     .map((l) => `- ${l}`)
     .join('\n');
 }
@@ -211,12 +213,7 @@ export function renderBrief(input: DispatchBriefInput): BriefRenderResult {
 
   sections.push('## 2. Context');
   sections.push(paragraphContext(input));
-  sections.push(
-    bullets([
-      `**Source signal:** ${originIssueLink(input)}`,
-      `**Ancestor trail:**`
-    ])
-  );
+  sections.push(bullets([`**Source signal:** ${originIssueLink(input)}`, `**Ancestor trail:**`]));
   sections.push(ancestorTrail(input));
 
   sections.push('## 3. Acceptance criteria');

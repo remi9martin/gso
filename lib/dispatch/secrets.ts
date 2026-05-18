@@ -14,7 +14,10 @@
 export const DISPATCHER_KEY_ENV_PREFIX = 'GSO_DISPATCHER_KEY_';
 
 export class DispatcherKeyMissingError extends Error {
-  constructor(public readonly targetCompanyId: string, public readonly envVarName: string) {
+  constructor(
+    public readonly targetCompanyId: string,
+    public readonly envVarName: string
+  ) {
     super(
       `No dispatcher key configured for target company ${targetCompanyId}. ` +
         `Set ${envVarName} in the GSO deployment env (see scripts/gso-provision-dispatcher.md). ` +
@@ -25,7 +28,10 @@ export class DispatcherKeyMissingError extends Error {
 }
 
 export function dispatcherKeyEnvVar(targetCompanyId: string): string {
-  const normalized = targetCompanyId.trim().toUpperCase().replace(/[^A-Z0-9]+/g, '_');
+  const normalized = targetCompanyId
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '_');
   if (!normalized) {
     throw new Error('dispatcherKeyEnvVar: targetCompanyId is empty');
   }
