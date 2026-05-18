@@ -518,6 +518,73 @@ describe('dispatch — refusal paths', () => {
     ).toBe(false);
   });
 
+  it('redacts both origin and sibling credentials from the compensating mirror description and audit comment', async () => {
+    // GSO-154: compensateFailedDispatch posts the redacted failure `reason`
+    // into the sibling company as the cancelled mirror description AND as an
+    // audit comment. If the upstream failure body echoes the ORIGIN-side
+    // credential (e.g. a fetch error surfacing an Authorization header from
+    // `patchIssue(sourceId, …)`), redacting only the sibling key would ship
+    // the origin credential across the trust boundary. Neither raw value may
+    // appear in either payload.
+    const state = freshState();
+    const baseTransport = makeTransport(state);
+    let injectedFailure = false;
+    const fetchImpl: typeof fetch = async (input, init = {}) => {
+      const url = typeof input === 'string' ? input : (input as URL).toString();
+      const method = (init.method ?? 'GET').toUpperCase();
+      // Inject failure on the FIRST mirror-metadata PUT. The 503 body echoes
+      // BOTH credential values, simulating an upstream that captured an auth
+      // header (origin) alongside another token (sibling).
+      if (
+        !injectedFailure &&
+        method === 'PUT' &&
+        url.endsWith(`/api/issues/${MIRROR_ID}/documents/${DISPATCH_METADATA_DOC_KEY}`)
+      ) {
+        injectedFailure = true;
+        await baseTransport(input, init);
+        return new Response(
+          `upstream exploded: origin_token=${ORIGIN_API_KEY} sibling_token=${SIBLING_API_KEY}`,
+          { status: 503 }
+        );
+      }
+      return baseTransport(input, init);
+    };
+
+    await expect(
+      dispatch(SOURCE_ID, TARGET_COMPANY_ID, {
+        env: SAMPLE_ENV,
+        fetchImpl,
+        envSource: { [ENV_VAR_NAME]: SIBLING_API_KEY },
+        runId: 'run-comp-redact'
+      })
+    ).rejects.toBeTruthy();
+
+    // The compensating PATCH on the mirror must contain neither raw credential.
+    const cancelPatch = state.calls.find(
+      (c) =>
+        c.method === 'PATCH' &&
+        c.url.endsWith(`/issues/${MIRROR_ID}`) &&
+        JSON.parse(c.body)?.status === 'cancelled'
+    );
+    expect(cancelPatch, 'expected a compensating PATCH to status=cancelled').toBeTruthy();
+    expect(cancelPatch!.body).not.toContain(ORIGIN_API_KEY);
+    expect(cancelPatch!.body).not.toContain(SIBLING_API_KEY);
+    expect(cancelPatch!.body).not.toContain('NEVER-LEAK');
+
+    // The compensating audit comment on the mirror must also contain neither.
+    const auditComment = state.calls.find(
+      (c) => c.method === 'POST' && c.url.endsWith(`/issues/${MIRROR_ID}/comments`)
+    );
+    expect(auditComment, 'expected a compensating audit comment on the mirror').toBeTruthy();
+    expect(auditComment!.body).not.toContain(ORIGIN_API_KEY);
+    expect(auditComment!.body).not.toContain(SIBLING_API_KEY);
+    expect(auditComment!.body).not.toContain('NEVER-LEAK');
+
+    // Sanity: the compensating description should reflect that the dispatch
+    // failed (otherwise we may not have hit the compensation path at all).
+    expect(String(JSON.parse(cancelPatch!.body).description)).toContain('DISPATCH FAILED');
+  });
+
   it('redacts any leaked key from error messages', async () => {
     const fetchImpl: typeof fetch = async (input, init = {}) => {
       const url = typeof input === 'string' ? input : (input as URL).toString();

@@ -14,7 +14,7 @@ import {
   DispatchAuthorizationError,
   checkDispatchAuthorization
 } from './authorization';
-import { loadDispatcherKey, redactKey, type OpaqueDispatcherKey } from './secrets';
+import { loadDispatcherKey, redactKeys, type OpaqueDispatcherKey } from './secrets';
 
 export const DISPATCH_METADATA_DOC_KEY = 'dispatch-metadata';
 
@@ -325,6 +325,7 @@ export async function dispatch(
         reason: wireError instanceof Error ? wireError.message : String(wireError),
         ctx,
         dispatcherKey,
+        originApiKey: env.apiKey,
         runId
       });
       throw wireError;
@@ -337,10 +338,12 @@ export async function dispatch(
       mirrorIssueUrl: mirrorUrl
     };
   } catch (err) {
-    // Defense in depth: never let the key value leak through an Error.message
-    // from any upstream service.
+    // Defense in depth: never let either credential value leak through an
+    // Error.message from any upstream service. Both sides matter — origin-side
+    // (env.apiKey) reads/writes from sourceIssueId may also surface in stack
+    // traces or fetch error bodies.
     if (err instanceof Error && err.message) {
-      err.message = redactKey(err.message, dispatcherKey);
+      err.message = redactKeys(err.message, [dispatcherKey, env.apiKey]);
     }
     throw err;
   }
@@ -457,6 +460,13 @@ async function postComment(
 // We mark the mirror cancelled with an explanatory comment so the sibling CEO
 // will not act on a half-wired issue. Errors here are swallowed — the caller
 // re-throws the original wireError.
+//
+// The redaction sweep must cover BOTH credentials. The redacted reason is
+// written into the sibling company (mirror description and an audit comment),
+// so if the upstream wireError echoes the origin-side JWT (e.g. an auth
+// header surfaced from a `patchIssue(sourceId, …)` failure stacktrace), an
+// origin-only redaction would ship that credential across the trust boundary.
+// See GSO-154.
 async function compensateFailedDispatch(args: {
   mirrorId: string;
   mirrorIdentifier: string;
@@ -464,10 +474,20 @@ async function compensateFailedDispatch(args: {
   reason: string;
   ctx: RequestCtx;
   dispatcherKey: OpaqueDispatcherKey;
+  originApiKey: string;
   runId: string | undefined;
 }): Promise<void> {
-  const { mirrorId, mirrorIdentifier, sourceIdentifier, reason, ctx, dispatcherKey, runId } = args;
-  const redactedReason = redactKey(reason, dispatcherKey).slice(0, 500);
+  const {
+    mirrorId,
+    mirrorIdentifier,
+    sourceIdentifier,
+    reason,
+    ctx,
+    dispatcherKey,
+    originApiKey,
+    runId
+  } = args;
+  const redactedReason = redactKeys(reason, [dispatcherKey, originApiKey]).slice(0, 500);
   const explanation =
     `Dispatch from origin issue \`${sourceIdentifier}\` failed mid-flight after this mirror ` +
     `was created. The mirror is incomplete (description placeholder may not be filled, ` +
