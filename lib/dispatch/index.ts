@@ -1,4 +1,5 @@
 export {
+  DispatchAlreadyDispatchedError,
   DispatchError,
   dispatch,
   DISPATCH_METADATA_DOC_KEY,

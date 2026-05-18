@@ -14,7 +14,7 @@ import {
   DispatchAuthorizationError,
   checkDispatchAuthorization
 } from './authorization';
-import { loadDispatcherKey, redactKey } from './secrets';
+import { loadDispatcherKey, redactKey, type OpaqueDispatcherKey } from './secrets';
 
 export const DISPATCH_METADATA_DOC_KEY = 'dispatch-metadata';
 
@@ -44,6 +44,61 @@ export class DispatchError extends Error {
     super(`Dispatch ${endpoint} returned ${status}: ${bodyText.slice(0, 200)}`);
     this.name = 'DispatchError';
   }
+}
+
+export class DispatchAlreadyDispatchedError extends Error {
+  constructor(
+    public readonly sourceIssueIdentifier: string,
+    public readonly existingMirrorIdentifier: string | null,
+    public readonly existingMirrorCompanyId: string | null,
+    public readonly dispatchedAt: string | null
+  ) {
+    const mirror = existingMirrorIdentifier ?? '(unknown mirror)';
+    super(
+      `Source issue ${sourceIssueIdentifier} has already been dispatched to ${mirror}` +
+        (dispatchedAt ? ` at ${dispatchedAt}` : '') +
+        `. Refusing to create a second mirror. ` +
+        `Clear or revoke the source-side \`${DISPATCH_METADATA_DOC_KEY}\` document if a re-dispatch is intended.`
+    );
+    this.name = 'DispatchAlreadyDispatchedError';
+  }
+}
+
+interface SourceDispatchMetadata {
+  mirrorIssueId: string | null;
+  mirrorCompanyId: string | null;
+  mirrorIdentifier: string | null;
+  dispatchedAt: string | null;
+}
+
+function parseSourceDispatchMetadata(body: string | null | undefined): SourceDispatchMetadata {
+  const out: SourceDispatchMetadata = {
+    mirrorIssueId: null,
+    mirrorCompanyId: null,
+    mirrorIdentifier: null,
+    dispatchedAt: null
+  };
+  if (!body) return out;
+  for (const line of body.split(/\r?\n/)) {
+    const match = /^([A-Za-z][A-Za-z0-9]*)\s*:\s*(.*)$/.exec(line.trim());
+    if (!match) continue;
+    const value = match[2].trim();
+    switch (match[1]) {
+      case 'mirrorIssueId':
+        out.mirrorIssueId = value || null;
+        break;
+      case 'mirrorCompanyId':
+        out.mirrorCompanyId = value || null;
+        break;
+      case 'mirrorIdentifier':
+        out.mirrorIdentifier = value || null;
+        break;
+      case 'dispatchedAt':
+        out.dispatchedAt = value || null;
+        break;
+    }
+  }
+  return out;
 }
 
 interface IssueResponse extends SourceIssueLike {
@@ -127,6 +182,24 @@ export async function dispatch(
       authDoc ? { body: authDoc.body ?? null } : null
     );
 
+    // 3b. Idempotency belt-and-braces — refuse if the source already records a
+    //     prior dispatch. Without this, a re-call would create a second mirror.
+    const existingSourceMeta = await getDocumentOrNull(
+      sourceIssueId,
+      DISPATCH_METADATA_DOC_KEY,
+      ctx,
+      env.apiKey
+    );
+    if (existingSourceMeta) {
+      const meta = parseSourceDispatchMetadata(existingSourceMeta.body);
+      throw new DispatchAlreadyDispatchedError(
+        sourceIssue.identifier,
+        meta.mirrorIdentifier,
+        meta.mirrorCompanyId,
+        meta.dispatchedAt
+      );
+    }
+
     // 4. Resolve origin company prefix (for in-brief links).
     const originCompany = await getJsonOrNull<CompanyResponse>(
       `/api/companies/${env.companyId}`,
@@ -194,50 +267,68 @@ export async function dispatch(
     const mirrorUrl = `/${targetPrefix}/issues/${mirror.identifier}`;
     const mirrorLinkMarkdown = `[${mirror.identifier}](${mirrorUrl})`;
 
-    // 9. Write dispatch-metadata on the mirror (sibling JWT).
-    await putDocument(
-      mirror.id,
-      DISPATCH_METADATA_DOC_KEY,
-      renderMirrorMetadata({
-        originIssueId: sourceIssue.id,
-        originCompanyId: env.companyId,
-        originIdentifier: sourceIssue.identifier,
-        dispatchedAt,
-        dispatchedByAgentId: dispatchedByAgentId ?? null
-      }),
-      ctx,
-      dispatcherKey.reveal(),
-      runId
-    );
+    // Steps 9–12 below are post-mirror-creation work. If any one of them
+    // fails the mirror is left half-wired (placeholder description, no
+    // source-side metadata). Wrap them so we can run a best-effort
+    // compensating action (mark the mirror cancelled with an explanatory
+    // comment) before re-throwing. See GSO-148 item 3.
+    try {
+      // 9. Write dispatch-metadata on the mirror (sibling JWT).
+      await putDocument(
+        mirror.id,
+        DISPATCH_METADATA_DOC_KEY,
+        renderMirrorMetadata({
+          originIssueId: sourceIssue.id,
+          originCompanyId: env.companyId,
+          originIdentifier: sourceIssue.identifier,
+          dispatchedAt,
+          dispatchedByAgentId: dispatchedByAgentId ?? null
+        }),
+        ctx,
+        dispatcherKey.reveal(),
+        runId
+      );
 
-    // 10. Re-render with the real mirror URL and PATCH the mirror description.
-    const finalBody = fillMirrorLink(rendered.body, mirrorLinkMarkdown);
-    await patchIssue(mirror.id, { description: finalBody }, ctx, dispatcherKey.reveal(), runId);
+      // 10. Re-render with the real mirror URL and PATCH the mirror description.
+      const finalBody = fillMirrorLink(rendered.body, mirrorLinkMarkdown);
+      await patchIssue(mirror.id, { description: finalBody }, ctx, dispatcherKey.reveal(), runId);
 
-    // 11. Write dispatch-metadata on the source (origin JWT).
-    await putDocument(
-      sourceIssueId,
-      DISPATCH_METADATA_DOC_KEY,
-      renderSourceMetadata({
-        mirrorIssueId: mirror.id,
-        mirrorCompanyId: targetCompanyId,
+      // 11. Write dispatch-metadata on the source (origin JWT).
+      await putDocument(
+        sourceIssueId,
+        DISPATCH_METADATA_DOC_KEY,
+        renderSourceMetadata({
+          mirrorIssueId: mirror.id,
+          mirrorCompanyId: targetCompanyId,
+          mirrorIdentifier: mirror.identifier,
+          dispatchedAt
+        }),
+        ctx,
+        env.apiKey,
+        runId
+      );
+
+      // 12. Comment on the source linking the mirror. The comment body must
+      //     never include the dispatcher key — we only embed the identifier.
+      await postComment(
+        sourceIssueId,
+        `Dispatched to sibling company → ${mirrorLinkMarkdown}\n\n- Mirror status: \`todo\` (assignee: target CEO)\n- Metadata document: \`${DISPATCH_METADATA_DOC_KEY}\` on both sides.`,
+        ctx,
+        env.apiKey,
+        runId
+      );
+    } catch (wireError) {
+      await compensateFailedDispatch({
+        mirrorId: mirror.id,
         mirrorIdentifier: mirror.identifier,
-        dispatchedAt
-      }),
-      ctx,
-      env.apiKey,
-      runId
-    );
-
-    // 12. Comment on the source linking the mirror. The comment body must
-    //     never include the dispatcher key — we only embed the identifier.
-    await postComment(
-      sourceIssueId,
-      `Dispatched to sibling company → ${mirrorLinkMarkdown}\n\n- Mirror status: \`todo\` (assignee: target CEO)\n- Metadata document: \`${DISPATCH_METADATA_DOC_KEY}\` on both sides.`,
-      ctx,
-      env.apiKey,
-      runId
-    );
+        sourceIdentifier: sourceIssue.identifier,
+        reason: wireError instanceof Error ? wireError.message : String(wireError),
+        ctx,
+        dispatcherKey,
+        runId
+      });
+      throw wireError;
+    }
 
     return {
       mirrorIssueId: mirror.id,
@@ -359,6 +450,50 @@ async function postComment(
     },
     ctx
   );
+}
+
+// Best-effort compensation when a mirror was created but the post-creation
+// wiring (metadata writes, description PATCH, source comment) failed.
+// We mark the mirror cancelled with an explanatory comment so the sibling CEO
+// will not act on a half-wired issue. Errors here are swallowed — the caller
+// re-throws the original wireError.
+async function compensateFailedDispatch(args: {
+  mirrorId: string;
+  mirrorIdentifier: string;
+  sourceIdentifier: string;
+  reason: string;
+  ctx: RequestCtx;
+  dispatcherKey: OpaqueDispatcherKey;
+  runId: string | undefined;
+}): Promise<void> {
+  const { mirrorId, mirrorIdentifier, sourceIdentifier, reason, ctx, dispatcherKey, runId } = args;
+  const redactedReason = redactKey(reason, dispatcherKey).slice(0, 500);
+  const explanation =
+    `Dispatch from origin issue \`${sourceIdentifier}\` failed mid-flight after this mirror ` +
+    `was created. The mirror is incomplete (description placeholder may not be filled, ` +
+    `metadata may be missing) and is being cancelled to prevent the sibling CEO from acting ` +
+    `on it. Cause: ${redactedReason}`;
+  try {
+    await patchIssue(
+      mirrorId,
+      {
+        status: 'cancelled',
+        description:
+          `[DISPATCH FAILED — see comment]\n\nOrigin: \`${sourceIdentifier}\`\nMirror: \`${mirrorIdentifier}\`\n\n` +
+          explanation
+      },
+      ctx,
+      dispatcherKey.reveal(),
+      runId
+    );
+  } catch {
+    /* best-effort */
+  }
+  try {
+    await postComment(mirrorId, explanation, ctx, dispatcherKey.reveal(), runId);
+  } catch {
+    /* best-effort */
+  }
 }
 
 async function fetchAncestors(

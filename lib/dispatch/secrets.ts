@@ -38,6 +38,11 @@ export function dispatcherKeyEnvVar(targetCompanyId: string): string {
   return `${DISPATCHER_KEY_ENV_PREFIX}${normalized}`;
 }
 
+// Node's util.inspect honours this symbol when console.log / util.inspect
+// formats an object. Using Symbol.for() (the cross-realm registry) instead
+// of a fresh Symbol keeps this resilient across bundled Node versions.
+const INSPECT_CUSTOM = Symbol.for('nodejs.util.inspect.custom');
+
 export interface OpaqueDispatcherKey {
   readonly envVarName: string;
   readonly targetCompanyId: string;
@@ -45,6 +50,8 @@ export interface OpaqueDispatcherKey {
   reveal(): string;
   /** Safe string form for logs and errors. Never includes the key. */
   toString(): string;
+  /** Node util.inspect hook — returns the redacted toString() form. */
+  [INSPECT_CUSTOM]?: () => string;
 }
 
 export function loadDispatcherKey(
@@ -57,12 +64,15 @@ export function loadDispatcherKey(
 
   // Closure captures the value so it is not reachable as an enumerable
   // property on the returned object — protects against accidental
-  // JSON.stringify or shallow inspection in logs.
+  // JSON.stringify or shallow inspection in logs. The util.inspect.custom
+  // hook keeps `console.log(key)` from printing the function bodies.
+  const safeLabel = `<dispatcher-key for ${targetCompanyId} via ${envVarName}>`;
   return {
     envVarName,
     targetCompanyId,
     reveal: () => raw,
-    toString: () => `<dispatcher-key for ${targetCompanyId} via ${envVarName}>`
+    toString: () => safeLabel,
+    [INSPECT_CUSTOM]: () => safeLabel
   };
 }
 

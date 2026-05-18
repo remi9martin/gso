@@ -52,7 +52,7 @@ export function checkDispatchAuthorization(
 
   if (isAuthorizedBody(body)) return;
 
-  if (/\bauthorized\s*:\s*false\b/i.test(body) || /^false$/i.test(body)) {
+  if (/^[ \t]*authorized\s*:\s*false\b/im.test(body) || /^[ \t]*false[ \t]*$/im.test(body)) {
     throw new DispatchAuthorizationError(
       'marker-false',
       sourceIssueIdentifier,
@@ -65,12 +65,15 @@ export function checkDispatchAuthorization(
     'marker-malformed',
     sourceIssueIdentifier,
     `Source issue ${sourceIssueIdentifier} has a malformed \`${DISPATCH_AUTHORIZED_DOC_KEY}\` ` +
-      `document. Expected \`authorized: true\` or bare \`true\`.`
+      `document. Expected \`authorized: true\` or bare \`true\` at the start of a line.`
   );
 }
 
+// Match `authorized: true` or bare `true` ONLY when the token starts a line
+// (after optional indentation). Prevents prose like "not authorized: true"
+// from satisfying the gate.
 function isAuthorizedBody(body: string): boolean {
-  if (/^true$/im.test(body)) return true;
-  if (/\bauthorized\s*:\s*true\b/i.test(body)) return true;
+  if (/^[ \t]*true[ \t]*$/im.test(body)) return true;
+  if (/^[ \t]*authorized\s*:\s*true\b/im.test(body)) return true;
   return false;
 }

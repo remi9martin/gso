@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   DISPATCH_METADATA_DOC_KEY,
+  DispatchAlreadyDispatchedError,
   DispatchAuthorizationError,
   DispatchBriefError,
   dispatch
@@ -50,6 +51,7 @@ interface RecordedCall {
 interface FakeTransportState {
   calls: RecordedCall[];
   authDoc: { body: string } | null;
+  sourceMetaDoc: { body: string } | null;
   stdoutCapture: string[];
   stderrCapture: string[];
 }
@@ -127,6 +129,16 @@ function makeTransport(state: FakeTransportState): typeof fetch {
       if (!state.authDoc) return notFound();
       return jsonResponse(200, { key: 'dispatch-authorized', body: state.authDoc.body });
     }
+    if (
+      url.endsWith(`/api/issues/${SOURCE_ID}/documents/${DISPATCH_METADATA_DOC_KEY}`) &&
+      method === 'GET'
+    ) {
+      if (!state.sourceMetaDoc) return notFound();
+      return jsonResponse(200, {
+        key: DISPATCH_METADATA_DOC_KEY,
+        body: state.sourceMetaDoc.body
+      });
+    }
     if (url.endsWith(`/api/companies/${ORIGIN_COMPANY_ID}`) && method === 'GET') {
       return jsonResponse(200, {
         id: ORIGIN_COMPANY_ID,
@@ -180,6 +192,7 @@ function freshState(): FakeTransportState {
   return {
     calls: [],
     authDoc: { body: 'authorized: true\nby: triage' },
+    sourceMetaDoc: null,
     stdoutCapture: [],
     stderrCapture: []
   };
@@ -306,7 +319,13 @@ describe('dispatch — happy path', () => {
     }
   });
 
-  it('never echoes the dispatcher key to stdout, stderr, or any comment body', async () => {
+  it('never echoes the dispatcher key to stdout, stderr, or any recorded request body', async () => {
+    // GSO-148 item 4: assert the sibling key value (raw AND the NEVER-LEAK
+    // sentinel embedded inside it) is absent from EVERY recorded call.body,
+    // not just comments and documents. That covers the mirror create POST,
+    // the mirror description PATCH, and any future call we add. The invariant
+    // is "the key never appears in any outbound payload", and the test states
+    // it directly instead of leaving it derived.
     const fetchImpl = makeTransport(state);
     await dispatch(SOURCE_ID, TARGET_COMPANY_ID, {
       env: SAMPLE_ENV,
@@ -316,19 +335,28 @@ describe('dispatch — happy path', () => {
 
     for (const line of state.stdoutCapture) {
       expect(line).not.toContain(SIBLING_API_KEY);
+      expect(line).not.toContain('NEVER-LEAK');
     }
     for (const line of state.stderrCapture) {
       expect(line).not.toContain(SIBLING_API_KEY);
+      expect(line).not.toContain('NEVER-LEAK');
     }
+
+    // Sanity check: at least one mirror create POST and one mirror PATCH
+    // were recorded — otherwise the leak assertions below are vacuous.
+    const mirrorPost = state.calls.find(
+      (c) => c.method === 'POST' && c.url.endsWith(`/companies/${TARGET_COMPANY_ID}/issues`)
+    );
+    const mirrorPatch = state.calls.find(
+      (c) => c.method === 'PATCH' && c.url.endsWith(`/issues/${MIRROR_ID}`)
+    );
+    expect(mirrorPost, 'mirror POST must be in the recorded calls').toBeTruthy();
+    expect(mirrorPatch, 'mirror PATCH must be in the recorded calls').toBeTruthy();
+
     for (const call of state.calls) {
-      if (call.method === 'POST' && call.url.endsWith('/comments')) {
-        const parsed = JSON.parse(call.body) as { body?: string };
-        expect(parsed.body ?? '').not.toContain(SIBLING_API_KEY);
-      }
-      if (call.method === 'PUT' && call.url.includes('/documents/')) {
-        const parsed = JSON.parse(call.body) as { body?: string };
-        expect(parsed.body ?? '').not.toContain(SIBLING_API_KEY);
-      }
+      const label = `${call.method} ${call.url}`;
+      expect(call.body, `${label} body leaked raw sibling key`).not.toContain(SIBLING_API_KEY);
+      expect(call.body, `${label} body leaked NEVER-LEAK sentinel`).not.toContain('NEVER-LEAK');
     }
   });
 });
@@ -400,6 +428,92 @@ describe('dispatch — refusal paths', () => {
     expect(
       state.calls.some(
         (c) => c.method === 'POST' && c.url.includes(`/companies/${TARGET_COMPANY_ID}/issues`)
+      )
+    ).toBe(false);
+  });
+
+  it('refuses re-dispatch when the source already has a dispatch-metadata doc (idempotency)', async () => {
+    // GSO-148 item 2: calling dispatch() a second time on the same source must
+    // not create a second mirror. The source-side metadata doc is the durable
+    // record of a prior dispatch; we refuse as soon as we see it.
+    const state = freshState();
+    state.sourceMetaDoc = {
+      body: [
+        'mirrorIssueId: prev-mirror',
+        'mirrorCompanyId: co-target',
+        'mirrorIdentifier: SIB-1',
+        'dispatchedAt: 2026-05-17T12:00:00.000Z'
+      ].join('\n')
+    };
+    const fetchImpl = makeTransport(state);
+    await expect(
+      dispatch(SOURCE_ID, TARGET_COMPANY_ID, {
+        env: SAMPLE_ENV,
+        fetchImpl,
+        envSource: { [ENV_VAR_NAME]: SIBLING_API_KEY }
+      })
+    ).rejects.toBeInstanceOf(DispatchAlreadyDispatchedError);
+
+    // No mirror POST may have been issued.
+    expect(
+      state.calls.some(
+        (c) => c.method === 'POST' && c.url.includes(`/companies/${TARGET_COMPANY_ID}/issues`)
+      )
+    ).toBe(false);
+  });
+
+  it('compensates partial-failure mid-flight by cancelling the orphan mirror', async () => {
+    // GSO-148 item 3: if POST mirror succeeds but a later step (e.g. PUT mirror
+    // metadata) fails, the dispatcher must mark the mirror cancelled so the
+    // sibling CEO never acts on a half-wired issue.
+    const state = freshState();
+    const baseTransport = makeTransport(state);
+    let injectedFailure = false;
+    const fetchImpl: typeof fetch = async (input, init = {}) => {
+      const url = typeof input === 'string' ? input : (input as URL).toString();
+      const method = (init.method ?? 'GET').toUpperCase();
+      // Inject failure on the FIRST mirror-metadata PUT; allow later
+      // best-effort calls (the compensating PATCH) to succeed.
+      if (
+        !injectedFailure &&
+        method === 'PUT' &&
+        url.endsWith(`/api/issues/${MIRROR_ID}/documents/${DISPATCH_METADATA_DOC_KEY}`)
+      ) {
+        injectedFailure = true;
+        // Delegate to baseTransport so the failed call is still recorded,
+        // then override the response with a 503.
+        await baseTransport(input, init);
+        return new Response('upstream exploded', { status: 503 });
+      }
+      return baseTransport(input, init);
+    };
+
+    await expect(
+      dispatch(SOURCE_ID, TARGET_COMPANY_ID, {
+        env: SAMPLE_ENV,
+        fetchImpl,
+        envSource: { [ENV_VAR_NAME]: SIBLING_API_KEY },
+        runId: 'run-comp'
+      })
+    ).rejects.toBeTruthy();
+
+    const cancelPatch = state.calls.find(
+      (c) =>
+        c.method === 'PATCH' &&
+        c.url.endsWith(`/issues/${MIRROR_ID}`) &&
+        JSON.parse(c.body)?.status === 'cancelled'
+    );
+    expect(cancelPatch, 'expected a compensating PATCH to status=cancelled').toBeTruthy();
+    expect(cancelPatch!.authorization).toBe(`Bearer ${SIBLING_API_KEY}`);
+    const cancelBody = JSON.parse(cancelPatch!.body) as Record<string, unknown>;
+    expect(String(cancelBody.description)).toContain('DISPATCH FAILED');
+
+    // And no source-side metadata PUT should have been written.
+    expect(
+      state.calls.some(
+        (c) =>
+          c.method === 'PUT' &&
+          c.url.endsWith(`/api/issues/${SOURCE_ID}/documents/${DISPATCH_METADATA_DOC_KEY}`)
       )
     ).toBe(false);
   });
