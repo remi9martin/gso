@@ -1,5 +1,7 @@
 'use client';
 
+import { useState } from 'react';
+
 import type { CanvasLayout, CanvasLayoutNode } from '@/lib/canvas/layout';
 import type { AgentStatusFlag, CanvasNode } from '@/lib/canvas/types';
 import { burnStateFor, type BurnState } from '@/styles/tokens';
@@ -9,7 +11,19 @@ import styles from './canvas.module.css';
 const NODE_WIDTH = 240;
 const NODE_HEIGHT = 168;
 
-export function CanvasGraph({ layout }: { layout: CanvasLayout }) {
+interface DragState {
+  from: string | null;
+  over: string | null;
+}
+
+interface CanvasGraphProps {
+  layout: CanvasLayout;
+  onReassign?: (sourceAgentId: string, targetAgentId: string) => void;
+}
+
+export function CanvasGraph({ layout, onReassign }: CanvasGraphProps) {
+  const [drag, setDrag] = useState<DragState>({ from: null, over: null });
+
   if (layout.nodes.length === 0) {
     return (
       <div className={styles.emptyState}>
@@ -19,6 +33,29 @@ export function CanvasGraph({ layout }: { layout: CanvasLayout }) {
   }
 
   const nodeIndex = new Map(layout.nodes.map((n) => [n.node.org.agentId, n]));
+
+  function handleDragStart(agentId: string) {
+    setDrag({ from: agentId, over: null });
+  }
+
+  function handleDragOver(agentId: string) {
+    setDrag((d) => ({ ...d, over: agentId }));
+  }
+
+  function handleDragLeave() {
+    setDrag((d) => ({ ...d, over: null }));
+  }
+
+  function handleDrop(sourceId: string, targetId: string) {
+    setDrag({ from: null, over: null });
+    if (sourceId !== targetId) {
+      onReassign?.(sourceId, targetId);
+    }
+  }
+
+  function handleDragEnd() {
+    setDrag({ from: null, over: null });
+  }
 
   return (
     <div className={styles.graphScroll} role="figure" aria-label="Agent reporting tree">
@@ -52,7 +89,22 @@ export function CanvasGraph({ layout }: { layout: CanvasLayout }) {
         </g>
         <g>
           {layout.nodes.map((laidOut) => (
-            <AgentNode key={laidOut.node.org.agentId} laidOut={laidOut} />
+            <AgentNode
+              key={laidOut.node.org.agentId}
+              laidOut={laidOut}
+              isDragging={drag.from === laidOut.node.org.agentId}
+              isDropTarget={
+                drag.over === laidOut.node.org.agentId &&
+                drag.from !== null &&
+                drag.from !== laidOut.node.org.agentId
+              }
+              dragFrom={drag.from}
+              onDragStart={handleDragStart}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              onDragEnd={handleDragEnd}
+            />
           ))}
         </g>
       </svg>
@@ -60,14 +112,74 @@ export function CanvasGraph({ layout }: { layout: CanvasLayout }) {
   );
 }
 
-function AgentNode({ laidOut }: { laidOut: CanvasLayoutNode }) {
+interface AgentNodeProps {
+  laidOut: CanvasLayoutNode;
+  isDragging: boolean;
+  isDropTarget: boolean;
+  dragFrom: string | null;
+  onDragStart: (agentId: string) => void;
+  onDragOver: (agentId: string) => void;
+  onDragLeave: () => void;
+  onDrop: (sourceId: string, targetId: string) => void;
+  onDragEnd: () => void;
+}
+
+function AgentNode({
+  laidOut,
+  isDragging,
+  isDropTarget,
+  dragFrom,
+  onDragStart,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  onDragEnd
+}: AgentNodeProps) {
   const { node, x, y } = laidOut;
+  const agentId = node.org.agentId;
   const statusTone = pickStatusTone(node);
+
+  const cardClass = [
+    styles.card,
+    styles[`card_${statusTone}`],
+    isDragging ? styles.card_dragging : '',
+    isDropTarget ? styles.card_dropTarget : ''
+  ]
+    .filter(Boolean)
+    .join(' ');
+
   return (
     <foreignObject x={x} y={y} width={NODE_WIDTH} height={NODE_HEIGHT}>
       <div
-        className={`${styles.card} ${styles[`card_${statusTone}`]}`}
+        className={cardClass}
         data-testid={`agent-card-${node.org.urlKey}`}
+        draggable
+        onDragStart={(e) => {
+          e.dataTransfer.setData('text/plain', agentId);
+          e.dataTransfer.effectAllowed = 'move';
+          onDragStart(agentId);
+        }}
+        onDragOver={(e) => {
+          if (dragFrom && dragFrom !== agentId) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            onDragOver(agentId);
+          }
+        }}
+        onDragLeave={(e) => {
+          // Only fire leave when leaving the card entirely (not a child element)
+          if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+            onDragLeave();
+          }
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          const sourceId = e.dataTransfer.getData('text/plain');
+          if (sourceId && sourceId !== agentId) {
+            onDrop(sourceId, agentId);
+          }
+        }}
+        onDragEnd={onDragEnd}
       >
         <div className={styles.cardHeader}>
           <span className={styles.cardName}>{node.org.displayName}</span>
@@ -76,6 +188,11 @@ function AgentNode({ laidOut }: { laidOut: CanvasLayoutNode }) {
         <FlagRow flags={node.flags} />
         <WorkloadRow node={node} />
         <BudgetRow node={node} />
+        {isDropTarget && (
+          <div className={styles.dropHint} aria-hidden>
+            Drop to reassign issues
+          </div>
+        )}
       </div>
     </foreignObject>
   );
@@ -150,10 +267,6 @@ function BudgetRow({ node }: { node: CanvasNode }) {
   );
 }
 
-// Burn states surface 4 hues on the bar (pre-attentive hue jump
-// warning → alert → critical) but the % label uses 3 text tones — `alert`
-// folds into the amber text family until the critical band. Bar colour
-// remains the primary signal; text echoes it without inventing a 4th token.
 function pctToneFor(state: BurnState): 'ok' | 'warn' | 'critical' {
   if (state === 'critical') return 'critical';
   if (state === 'healthy') return 'ok';

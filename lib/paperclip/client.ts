@@ -17,6 +17,8 @@ export class PaperclipApiError extends Error {
 export interface PaperclipClient {
   listAgents(): Promise<PaperclipAgent[]>;
   listOpenIssues(): Promise<PaperclipIssue[]>;
+  listIssuesByAgent(agentId: string): Promise<PaperclipIssue[]>;
+  reassignIssue(issueId: string, targetAgentId: string): Promise<PaperclipIssue>;
 }
 
 const OPEN_ISSUE_STATUSES = 'todo,in_progress,in_review,blocked';
@@ -32,15 +34,18 @@ export function createPaperclipClient(options: PaperclipClientOptions = {}): Pap
   const fetchImpl = options.fetchImpl ?? fetch;
   const timeoutMs = options.timeoutMs ?? 8000;
 
-  async function request<T>(path: string): Promise<T> {
+  async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const url = `${env.apiUrl}${path}`;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const res = await fetchImpl(url, {
+        ...init,
         headers: {
           Authorization: `Bearer ${env.apiKey}`,
-          Accept: 'application/json'
+          Accept: 'application/json',
+          ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
+          ...(init?.headers ?? {})
         },
         signal: controller.signal,
         cache: 'no-store'
@@ -62,6 +67,16 @@ export function createPaperclipClient(options: PaperclipClientOptions = {}): Pap
     listOpenIssues() {
       const qs = `status=${OPEN_ISSUE_STATUSES}`;
       return request<PaperclipIssue[]>(`/api/companies/${env.companyId}/issues?${qs}`);
+    },
+    listIssuesByAgent(agentId: string) {
+      const qs = `status=${OPEN_ISSUE_STATUSES}&assigneeAgentId=${encodeURIComponent(agentId)}`;
+      return request<PaperclipIssue[]>(`/api/companies/${env.companyId}/issues?${qs}`);
+    },
+    reassignIssue(issueId: string, targetAgentId: string) {
+      return request<PaperclipIssue>(`/api/issues/${issueId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ assigneeAgentId: targetAgentId })
+      });
     }
   };
 }
