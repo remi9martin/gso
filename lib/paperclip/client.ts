@@ -1,7 +1,7 @@
 import 'server-only';
 
 import { readPaperclipEnv, type PaperclipEnv } from './env';
-import type { PaperclipAgent, PaperclipIssue } from './types';
+import type { PaperclipAgent, PaperclipApproval, PaperclipIssue } from './types';
 
 export class PaperclipApiError extends Error {
   constructor(
@@ -17,6 +17,8 @@ export class PaperclipApiError extends Error {
 export interface PaperclipClient {
   listAgents(): Promise<PaperclipAgent[]>;
   listOpenIssues(): Promise<PaperclipIssue[]>;
+  listInReviewIssues(): Promise<PaperclipIssue[]>;
+  listPendingApprovals(): Promise<PaperclipApproval[]>;
 }
 
 const OPEN_ISSUE_STATUSES = 'todo,in_progress,in_review,blocked';
@@ -62,6 +64,16 @@ export function createPaperclipClient(options: PaperclipClientOptions = {}): Pap
     listOpenIssues() {
       const qs = `status=${OPEN_ISSUE_STATUSES}`;
       return request<PaperclipIssue[]>(`/api/companies/${env.companyId}/issues?${qs}`);
+    },
+    listInReviewIssues() {
+      return request<PaperclipIssue[]>(
+        `/api/companies/${env.companyId}/issues?status=in_review`
+      );
+    },
+    listPendingApprovals() {
+      return request<PaperclipApproval[]>(
+        `/api/companies/${env.companyId}/approvals?status=pending`
+      );
     }
   };
 }

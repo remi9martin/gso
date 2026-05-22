@@ -54,3 +54,12 @@ export interface PaperclipIssue {
   updatedAt: string;
   lastActivityAt: string | null;
 }
+
+export interface PaperclipApproval {
+  id: string;
+  type: string;
+  status: 'pending' | 'approved' | 'denied' | string;
+  issueIds: string[];
+  requestedByAgentId: string;
+  createdAt: string;
+}
