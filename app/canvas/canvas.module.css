@@ -146,6 +146,45 @@
   gap: 0.35rem;
   font-size: 0.78rem;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  cursor: grab;
+  user-select: none;
+  transition:
+    box-shadow 120ms ease,
+    border-color 120ms ease,
+    opacity 120ms ease;
+}
+
+.card_dragging {
+  opacity: 0.45;
+  box-shadow: 0 0 0 2px #6366f1, 0 4px 12px rgba(99, 102, 241, 0.2);
+  cursor: grabbing;
+}
+
+.card_dropTarget {
+  box-shadow: 0 0 0 2px #22c55e, 0 6px 18px rgba(34, 197, 94, 0.25);
+  border-color: #22c55e;
+  background: #f0fdf4;
+}
+
+.dropHint {
+  margin-top: auto;
+  text-align: center;
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: #16a34a;
+  padding: 0.2rem 0;
+  animation: fadeInUp 80ms ease;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .card_running {
@@ -369,4 +408,75 @@
 
 .dot_overloaded {
   background: #ab47bc;
+}
+
+/* Undo banner */
+.undoBanner {
+  position: sticky;
+  bottom: 1.5rem;
+  margin-top: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.65rem 1rem;
+  background: #1f1f1f;
+  color: #fff;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+  animation: slideUp 160ms ease;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.undoMessage {
+  flex: 1;
+}
+
+.undoActions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.undoButton {
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: transparent;
+  color: #fff;
+  font-size: 0.82rem;
+  font-weight: 500;
+  padding: 0.3rem 0.7rem;
+  border-radius: 5px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.undoButton:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.undoDismiss {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: 0 0.25rem;
+  line-height: 1;
+}
+
+.undoDismiss:hover {
+  color: #fff;
 }
